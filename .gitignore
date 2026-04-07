@@ -1,0 +1,17 @@
+# Proteger chave API e dados sensíveis
+.env
+.env.local
+.env.production
+
+# Estado persistido em runtime (não commitar)
+data/lastSignals.json
+data/vip_trades.json
+data/vip_signals.json
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Sistema
+.DS_Store
+Thumbs.db
