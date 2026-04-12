@@ -1588,11 +1588,10 @@ app.get('/api/usdjpy', rateLimit, (req, res) => safeGetAsset('usdjpy', res));
 
 // ===== ROTA: BACKTEST DATA (consolidada) =====
 // Retorna candlesticks de todos os ativos em todos os TFs para o backtester.html
-app.get('/api/backtest-data', rateLimit, async (req, res) => {
+// Usa dados em cache + fetches em paralelo se cache estiver velho
+app.get('/api/backtest-data', rateLimit, (req, res) => {
   try {
     const result = {};
-
-    // Mapeia: chave interna → nome do ativo no response
     const assetMap = {
       'xauusd': 'xau',
       'btc':    'btc',
@@ -1600,20 +1599,27 @@ app.get('/api/backtest-data', rateLimit, async (req, res) => {
       'usdjpy': 'jpy'
     };
 
-    // Busca dados de cada ativo
+    // Retorna dados do cache (ou fallback)
     for (const [key, assetName] of Object.entries(assetMap)) {
-      const data = await getAsset(key);
-      if (data && data['15m']) {
+      const cached = cache[key];
+      if (cached && cached.data && cached.data['15m']) {
         result[assetName] = {
-          '15m':  data['15m'],
-          '1h':   data['1h']   || [],
-          '4h':   data['4h']   || [],
-          'daily': data['daily'] || []
+          '15m':  cached.data['15m'],
+          '1h':   cached.data['1h']   || [],
+          '4h':   cached.data['4h']   || [],
+          'daily': cached.data['daily'] || []
         };
       }
     }
 
     res.json(result);
+
+    // Refresh async (sem bloquear resposta) se cache estiver velho
+    for (const key of Object.keys(assetMap)) {
+      if (!isCacheValid(key)) {
+        getAsset(key).catch(e => console.log(`⚠️  Auto-refresh ${key} falhou: ${e.message}`));
+      }
+    }
   } catch (err) {
     console.error('Erro ao buscar dados para backtester:', err.message);
     res.status(500).json({ error: 'Erro ao carregar dados para backtester', detail: err.message });
