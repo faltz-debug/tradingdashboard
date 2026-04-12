@@ -772,15 +772,19 @@ function tradePct(type, entry, exit) {
 // ─── STRATEGIES ───
 const STRATEGIES = {
     trend: {
-        name: '🎯 EMA Tendência + ADX + Bias 1H',
+        name: '🎯 EMA Tendência + ADX + Bias + Trailing Stop ATR',
         explain: `
-            <strong>Estratégia: EMA Tendência Alinhada com Filtros de Regime</strong><br><br>
+            <strong>Estratégia: EMA Tendência com Trailing Stop Dinâmico (ATR)</strong><br><br>
             <b>Filtros obrigatórios:</b>
             <span class="condition">ADX ≥ 25 (mercado em tendência)</span>
             <span class="condition">Bias do TF maior na mesma direção</span><br><br>
-            <b>🟢 COMPRA:</b> EMA9 &gt; EMA20 &gt; EMA50 + Pullback à EMA20 (±1×ATR) + Vela verde forte → Saída: fecha abaixo EMA9 ou low &lt; EMA50<br>
-            <b>🔴 VENDA:</b> EMA9 &lt; EMA20 &lt; EMA50 + Pullback à EMA20 (±1×ATR) + Vela vermelha forte → Saída: fecha acima EMA9 ou high &gt; EMA50<br>
-            <i>Sem ADX forte e sem bias do TF maior, a estratégia NÃO entra — elimina trades em mercado lateral.</i>
+            <b>🟢 COMPRA:</b> EMA9 &gt; EMA20 &gt; EMA50 + Pullback à EMA20 (±1×ATR) + Vela verde forte<br>
+            &nbsp;&nbsp;&nbsp;→ <b>Trailing Stop</b> = máxima acumulada − 1.5×ATR &nbsp;|&nbsp; sobe junto com o preço, nunca recua<br>
+            &nbsp;&nbsp;&nbsp;→ Saída emergencial: low fecha abaixo EMA50 (stop fixo de segurança)<br><br>
+            <b>🔴 VENDA:</b> EMA9 &lt; EMA20 &lt; EMA50 + Pullback à EMA20 (±1×ATR) + Vela vermelha forte<br>
+            &nbsp;&nbsp;&nbsp;→ <b>Trailing Stop</b> = mínima acumulada + 1.5×ATR &nbsp;|&nbsp; desce junto com o preço, nunca sobe<br>
+            &nbsp;&nbsp;&nbsp;→ Saída emergencial: high fecha acima EMA50<br><br>
+            <i>Trailing stop substitui a saída fixa na EMA9 — captura tendências longas em vez de sair no primeiro pullback. ATR ajusta o stop à volatilidade atual do ativo.</i>
         `,
         run(candles, biasCandles, asset) {
             const closes = candles.map(c=>c.close);
@@ -790,11 +794,11 @@ const STRATEGIES = {
             const bias=getBiasDirection(biasCandles);
             const trades=[];
             let inTrade=false, tradeType='', entryIdx=0, entryPrice=0;
+            let trailStop=0, peakPrice=0; // trailing stop state
 
             for(let i=52;i<candles.length;i++){
                 const c=candles[i], prev=candles[i-1];
                 if(!inTrade){
-                    // FILTRO 1: ADX >= 25 (mercado em tendência)
                     if(!adx[i]||adx[i]<25) continue;
                     const longAlign  = e9[i]>e20[i]&&e20[i]>e50[i];
                     const shortAlign = e9[i]<e20[i]&&e20[i]<e50[i];
@@ -802,37 +806,56 @@ const STRATEGIES = {
                     const range = c.high-c.low||0.0001;
                     const strongBody = body/range>0.4;
                     const atrTol = atr[i]||0;
-
-                    // FILTRO 2: bias do TF maior deve concordar (ou NEUTRAL aceita)
                     const biasOkLong  = bias==='BUY'||bias==='NEUTRAL';
                     const biasOkShort = bias==='SELL'||bias==='NEUTRAL';
-
                     const pat = detectCandlePattern(c, prev);
 
-                    // LONG: pullback ao low tocando EMA20 com tolerância baseada em ATR
                     if(longAlign && biasOkLong
                         && Math.abs(prev.low-e20[i-1])<atrTol*1.2
                         && c.close>c.open && c.close>e9[i] && strongBody
                         && (!confluenceEnabled || pat.bull)){
                         inTrade=true; tradeType='COMPRA'; entryIdx=i; entryPrice=c.close;
+                        peakPrice  = c.close;
+                        trailStop  = peakPrice - 1.5*(atr[i]||atrTol);
                         _entryPattern = pat.name || 'Corpo Forte';
                     }
-                    // SHORT: pullback ao high tocando EMA20 com tolerância ATR
                     else if(shortAlign && biasOkShort
                         && Math.abs(prev.high-e20[i-1])<atrTol*1.2
                         && c.close<c.open && c.close<e9[i] && strongBody
                         && (!confluenceEnabled || pat.bear)){
                         inTrade=true; tradeType='VENDA'; entryIdx=i; entryPrice=c.close;
+                        peakPrice  = c.close;
+                        trailStop  = peakPrice + 1.5*(atr[i]||atrTol);
                         _entryPattern = pat.name || 'Corpo Forte';
                     }
                 } else {
-                    let exit=false;
-                    if(tradeType==='COMPRA') exit=c.close<e9[i]||c.low<e50[i]*0.998;
-                    else                     exit=c.close>e9[i]||c.high>e50[i]*1.002;
-                    if(exit){
-                        const pct=tradePct(tradeType,entryPrice,c.close);
-                        trades.push({entryIdx,exitIdx:i,entryPrice,exitPrice:c.close,pct,win:pct>0,type:tradeType,pattern:_entryPattern});
-                        inTrade=false;
+                    const curAtr = atr[i] || atr[i-1] || 0.0001;
+
+                    if(tradeType==='COMPRA'){
+                        // Atualiza peak e sobe o trailing stop
+                        if(c.high > peakPrice) peakPrice = c.high;
+                        trailStop = Math.max(trailStop, peakPrice - 1.5*curAtr);
+                        // Saída: trailing stop tocado OU EMA50 violada (stop de segurança)
+                        const hit = c.low <= trailStop;
+                        const ema50breach = c.low < e50[i]*0.997;
+                        if(hit || ema50breach){
+                            const exitPrice = hit ? Math.min(c.close, trailStop) : c.close;
+                            const pct=tradePct(tradeType,entryPrice,exitPrice);
+                            trades.push({entryIdx,exitIdx:i,entryPrice,exitPrice,pct,win:pct>0,type:tradeType,pattern:_entryPattern,sl:trailStop,hasSL:true});
+                            inTrade=false;
+                        }
+                    } else {
+                        // VENDA: peakPrice é a mínima acumulada (mais baixa = melhor)
+                        if(c.low < peakPrice) peakPrice = c.low;
+                        trailStop = Math.min(trailStop, peakPrice + 1.5*curAtr);
+                        const hit = c.high >= trailStop;
+                        const ema50breach = c.high > e50[i]*1.003;
+                        if(hit || ema50breach){
+                            const exitPrice = hit ? Math.max(c.close, trailStop) : c.close;
+                            const pct=tradePct(tradeType,entryPrice,exitPrice);
+                            trades.push({entryIdx,exitIdx:i,entryPrice,exitPrice,pct,win:pct>0,type:tradeType,pattern:_entryPattern,sl:trailStop,hasSL:true});
+                            inTrade=false;
+                        }
                     }
                 }
             }
@@ -1241,10 +1264,10 @@ function renderBtChart(asset, candles, trades, stratKey){
     e50s.setData(candles.map((c,i)=>({time:c.time,value:e50[i]})));
 
     // Markers: COMPRA (verde ▲ abaixo), VENDA (vermelho ▼ acima), saída (azul/vermelho)
-    // Estratégias com stop/alvo real usam TP/SL; sem stop real usam EXIT+/EXIT-
     const hasSLStrat = trades.length > 0 && trades[0].hasSL;
-    const winLabel  = hasSLStrat ? '✓TP' : '✓EXIT';
-    const lossLabel = hasSLStrat ? ' SL'  : ' EXIT';
+    const hasTP      = trades.length > 0 && trades[0].tp != null;
+    const winLabel   = hasTP ? '✓TP' : hasSLStrat ? '✓TRAIL' : '✓EXIT';
+    const lossLabel  = hasSLStrat ? ' SL' : ' EXIT';
     const markers = [];
     trades.forEach(t=>{
         if(t.type==='COMPRA'){
