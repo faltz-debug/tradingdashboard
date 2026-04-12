@@ -579,8 +579,9 @@ function computeSignals(candles15m, assetName, dec, tf = '15M') {
   // 2. EMA Crossover
   const emaSig = ema9 > ema20 ? 'COMPRA' : 'VENDA';
 
-  // 3. MACD
-  const macdSigStr = macd > macdSig ? 'COMPRA' : 'VENDA';
+  // 3. RSI Momentum — confirma força da tendência (≠ RSI Reversão que usa 30/70)
+  // RSI > 55 = momentum bullish ativo | RSI < 45 = momentum bearish ativo | 45-55 = sem direção
+  const rsiTrendSig = rsi > 55 ? 'COMPRA' : rsi < 45 ? 'VENDA' : 'NEUTRO';
 
   // 4. Breakout (exclui vela atual — senão close nunca > próprio high)
   const prevCandles = candles15m.slice(-21, -1);
@@ -590,10 +591,10 @@ function computeSignals(candles15m, assetName, dec, tf = '15M') {
   if (price > bkHigh) bkSig = 'COMPRA';
   else if (price < bkLow) bkSig = 'VENDA';
 
-  // Master Signal (3 estratégias de tendência — EMA Crossover removido: é redundante com EMA Trend)
-  // RSI separado como estratégia de Reversão
+  // Master Signal: EMA Trend (direção) + RSI Momentum (força) + Breakout (nível)
+  // MACD removido: zero edge comprovado (14.3M backtests). RSI tem WR 60-65% validado.
   const sigMap = { 'COMPRA': 1, 'VENDA': -1 };
-  const score  = [trendSig, macdSigStr, bkSig].map(s => sigMap[s] || 0).reduce((a, b) => a + b, 0);
+  const score  = [trendSig, rsiTrendSig, bkSig].map(s => sigMap[s] || 0).reduce((a, b) => a + b, 0);
 
   // RSI + Bollinger (Reversão)
   const rsiSig = rsi < 30 ? 'COMPRA' : rsi > 70 ? 'VENDA' : 'NEUTRO';
@@ -629,7 +630,7 @@ function computeSignals(candles15m, assetName, dec, tf = '15M') {
 
   return {
     asset: assetName, price, dec, score, masterLabel, masterEmoji, tf,
-    trendSig, emaSig, macdSig: macdSigStr, bkSig,
+    trendSig, emaSig, rsiTrendSig, bkSig,
     rsi, rsiSig, rsiReversalAlert, bb,
     atr, entry, sl, tp, tfConfluence: [tf],
     adx, pdi, mdi, adxTrend, adxOk, adxDir,
@@ -669,9 +670,9 @@ function buildTelegramMessage(s, sessionInfo, newsInfo) {
   // Avisos filtros
   if (filtros.length) msg += `\n${filtros.join('\n')}\n`;
 
-  msg += `\n<b>Estratégias de Tendência (3 filtros):</b>\n`;
+  msg += `\n<b>Confirmações (3 filtros):</b>\n`;
   msg += `  EMA Tendência : ${s.trendSig === 'COMPRA' ? '🟢' : s.trendSig === 'VENDA' ? '🔴' : '⚪'} ${s.trendSig}\n`;
-  msg += `  MACD          : ${s.macdSig === 'COMPRA' ? '🟢' : '🔴'} ${s.macdSig}\n`;
+  msg += `  RSI Momentum  : ${s.rsiTrendSig === 'COMPRA' ? '🟢' : s.rsiTrendSig === 'VENDA' ? '🔴' : '⚪'} ${s.rsiTrendSig} (RSI ${s.rsi.toFixed(1)})\n`;
   msg += `  Breakout      : ${s.bkSig === 'COMPRA' ? '🟢' : s.bkSig === 'VENDA' ? '🔴' : '⚪'} ${s.bkSig}\n`;
 
   // Níveis de operação
