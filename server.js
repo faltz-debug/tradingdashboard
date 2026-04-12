@@ -53,6 +53,7 @@ const PORT             = process.env.PORT || 3000;
 const TWELVE_DATA_KEY  = process.env.TWELVE_DATA_KEY  || 'COLE_SUA_CHAVE_AQUI';
 const TELEGRAM_TOKEN   = process.env.TELEGRAM_TOKEN   || '';
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
+const VIP_TOKEN        = process.env.VIP_TOKEN        || '';
 const CACHE_TTL_MS     = 15 * 60 * 1000;   // 15 minutos (fallback Twelve Data)
 
 // ── OANDA (tempo real para XAU, EUR, JPY) ───────────────────────────────────
@@ -1174,6 +1175,29 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000);
 
+// ===== AUTENTICAÇÃO VIP =====
+// Protege todas as rotas /api/vip/* com token via header ou query string
+// Header:       Authorization: Bearer SEU_TOKEN
+// Query string: ?token=SEU_TOKEN
+// Se VIP_TOKEN não estiver configurado no .env, acesso é bloqueado por segurança
+function vipAuth(req, res, next) {
+  if (!VIP_TOKEN) {
+    return res.status(503).json({
+      error: 'VIP não configurado',
+      detail: 'Configure VIP_TOKEN nas variáveis de ambiente do Railway'
+    });
+  }
+  const header = req.headers['authorization'] || '';
+  const tokenFromHeader = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+  const tokenFromQuery  = req.query.token || '';
+  const provided = tokenFromHeader || tokenFromQuery;
+
+  if (!provided || provided !== VIP_TOKEN) {
+    return res.status(401).json({ error: 'Token inválido ou ausente' });
+  }
+  next();
+}
+
 // ===== SINAIS NA RESPOSTA DA API =====
 // Computa e anexa sinais ao payload antes de devolver ao frontend
 // Elimina a duplicação de lógica entre server.js e dashboard.html
@@ -1423,7 +1447,7 @@ async function computeVipSignal(assetKey, entryTf = '15m', biasTf = '1h', { skip
 
 // ===== ROTAS VIP =====
 
-app.get('/api/vip/signal', rateLimit, async (req, res) => {
+app.get('/api/vip/signal', rateLimit, vipAuth, async (req, res) => {
   const asset   = (req.query.asset   || 'xauusd').toLowerCase();
   const entryTf = (req.query.entryTf || '15m').toLowerCase();
   const biasTf  = (req.query.biasTf  || '1h').toLowerCase();
@@ -1440,13 +1464,13 @@ app.get('/api/vip/signal', rateLimit, async (req, res) => {
   }
 });
 
-app.get('/api/vip/signals', rateLimit, (req, res) => {
+app.get('/api/vip/signals', rateLimit, vipAuth, (req, res) => {
   const { asset, status, limit } = req.query;
   const signals = tradeStore.listSignals({ asset, status, limit: parseInt(limit) || 100 });
   res.json({ success: true, count: signals.length, signals });
 });
 
-app.post('/api/vip/trades/open', rateLimit, (req, res) => {
+app.post('/api/vip/trades/open', rateLimit, vipAuth, (req, res) => {
   const { asset, direction, entry, sl, tp, atr, rr, score, biasTf, entryTf, session, reason } = req.body;
   if (!asset || !direction || entry == null || sl == null || tp == null)
     return res.status(400).json({ success: false, error: 'Campos obrigatórios: asset, direction, entry, sl, tp' });
@@ -1479,7 +1503,7 @@ app.post('/api/vip/trades/open', rateLimit, (req, res) => {
   res.json({ success: true, trade });
 });
 
-app.post('/api/vip/trades/close', rateLimit, (req, res) => {
+app.post('/api/vip/trades/close', rateLimit, vipAuth, (req, res) => {
   const { id, closePrice, outcome } = req.body;
   if (!id || closePrice == null)
     return res.status(400).json({ success: false, error: 'Campos obrigatórios: id, closePrice' });
@@ -1503,13 +1527,13 @@ app.post('/api/vip/trades/close', rateLimit, (req, res) => {
   res.json({ success: true, trade });
 });
 
-app.get('/api/vip/trades', rateLimit, (req, res) => {
+app.get('/api/vip/trades', rateLimit, vipAuth, (req, res) => {
   const { asset, status, limit } = req.query;
   const trades = tradeStore.listTrades({ asset, status, limit: parseInt(limit) || 100 });
   res.json({ success: true, count: trades.length, trades });
 });
 
-app.get('/api/vip/stats', rateLimit, (req, res) => {
+app.get('/api/vip/stats', rateLimit, vipAuth, (req, res) => {
   const { asset } = req.query;
   const stats = tradeStore.getStats({ asset });
   res.json({ success: true, stats });
@@ -1519,7 +1543,7 @@ app.get('/api/vip/stats', rateLimit, (req, res) => {
  * GET /api/vip/scan?entryTf=15m&biasTf=4h
  * Escaneia todos os ativos de uma vez e retorna resumo de cada um
  */
-app.get('/api/vip/scan', rateLimit, async (req, res) => {
+app.get('/api/vip/scan', rateLimit, vipAuth, async (req, res) => {
   const entryTf = (req.query.entryTf || '15m').toLowerCase();
   const biasTf  = (req.query.biasTf  || '1h').toLowerCase();
   const validTfs = ['15m', '1h', '4h', 'daily', '1d'];
