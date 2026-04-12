@@ -1038,6 +1038,8 @@ async function fetchFromTwelveData(symbol) {
   });
   if (!res.data?.values?.length) throw new Error('Sem dados');
 
+  const intervalMs = 15 * 60 * 1000;
+  const now = Date.now();
   const all = res.data.values.reverse().map(v => ({
     // Usa o datetime REAL retornado pela API (UTC). Adicionar 'Z' força parse como UTC.
     time:  Math.floor(new Date(v.datetime + 'Z').getTime() / 1000),
@@ -1045,11 +1047,13 @@ async function fetchFromTwelveData(symbol) {
     high:  parseFloat(v.high),
     low:   parseFloat(v.low),
     close: parseFloat(v.close)
-  }));
+  })).filter(c => ((c.time * 1000) + intervalMs) <= now);
+
+  if (!all.length) throw new Error('Sem candles completos na Twelve Data');
 
   return {
     success:      true,
-    source:       'Twelve Data',
+    source:       'Twelve Data (candles fechados)',
     isSimulation: false,
     price:        all[all.length - 1].close,
     '15m':        all.slice(-500),
@@ -1582,6 +1586,40 @@ app.get('/api/xauusd', rateLimit, (req, res) => safeGetAsset('xauusd', res));
 app.get('/api/eurusd', rateLimit, (req, res) => safeGetAsset('eurusd', res));
 app.get('/api/usdjpy', rateLimit, (req, res) => safeGetAsset('usdjpy', res));
 
+// ===== ROTA: BACKTEST DATA (consolidada) =====
+// Retorna candlesticks de todos os ativos em todos os TFs para o backtester.html
+app.get('/api/backtest-data', rateLimit, async (req, res) => {
+  try {
+    const result = {};
+
+    // Mapeia: chave interna → nome do ativo no response
+    const assetMap = {
+      'xauusd': 'xau',
+      'btc':    'btc',
+      'eurusd': 'eur',
+      'usdjpy': 'jpy'
+    };
+
+    // Busca dados de cada ativo
+    for (const [key, assetName] of Object.entries(assetMap)) {
+      const data = await getAsset(key);
+      if (data && data['15m']) {
+        result[assetName] = {
+          '15m':  data['15m'],
+          '1h':   data['1h']   || [],
+          '4h':   data['4h']   || [],
+          'daily': data['daily'] || []
+        };
+      }
+    }
+
+    res.json(result);
+  } catch (err) {
+    console.error('Erro ao buscar dados para backtester:', err.message);
+    res.status(500).json({ error: 'Erro ao carregar dados para backtester', detail: err.message });
+  }
+});
+
 app.get('/api/health', rateLimit, (req, res) => {
   const status = {};
   Object.entries(ASSETS).forEach(([key, cfg]) => {
@@ -1736,10 +1774,4 @@ app.listen(PORT, async () => {
     console.log('ℹ️  OANDA_API_KEY não configurada — XAU/EUR/JPY usará Twelve Data (15min)');
     console.log('   Para ativar: adicione OANDA_API_KEY=seu_token no .env\n');
     console.log('📥 Carregando ativos via Twelve Data...\n');
-    for (const key of ['xauusd', 'eurusd', 'usdjpy']) await getAsset(key);
-  }
-
-  // Carrega calendário econômico
-  await fetchEconomicCalendar();
-  console.log('\n✅ Pronto! http://localhost:3000/dashboard.html\n');
-});
+    for (const
