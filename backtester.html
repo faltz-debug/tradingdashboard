@@ -133,12 +133,23 @@
         <span id="cost-desc" style="font-size:10px;color:#ffaa00;margin-left:6px">Spread + comissão ECN realista (ex: IC Markets)</span>
     </div>
 
-    <!-- WALK-FORWARD TOGGLE -->
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding:10px 16px;background:#070b14;border:1px solid #2d1b69;border-radius:8px;flex-wrap:wrap">
+    <!-- CONFLUENCE + WALK-FORWARD TOGGLES -->
+    <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+
+    <!-- Confluence Toggle -->
+    <div style="flex:1;min-width:280px;display:flex;align-items:center;gap:10px;padding:10px 16px;background:#070b14;border:1px solid #065f46;border-radius:8px;flex-wrap:wrap">
+        <span style="font-size:11px;color:#10b981;font-weight:700;text-transform:uppercase;letter-spacing:.05em">🕯️ Confluência Padrões:</span>
+        <button id="conf-toggle" onclick="toggleConfluence(this)" style="padding:5px 16px;background:#0d1526;border:1px solid #065f46;color:#10b981;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700;font-family:'Courier New',monospace;transition:all .2s">OFF</button>
+        <span style="font-size:10px;color:#64748b">Exige <b style="color:#10b981">padrão de vela confirmatório</b> em cada entrada — Martelo, Engolfo, Pin Bar, Marubozu</span>
+    </div>
+
+    <!-- Walk-Forward Toggle -->
+    <div style="flex:1;min-width:280px;display:flex;align-items:center;gap:10px;padding:10px 16px;background:#070b14;border:1px solid #2d1b69;border-radius:8px;flex-wrap:wrap">
         <span style="font-size:11px;color:#7c3aed;font-weight:700;text-transform:uppercase;letter-spacing:.05em">🔄 Walk-Forward Test:</span>
         <button id="wf-toggle" onclick="toggleWF(this)" style="padding:5px 16px;background:#0d1526;border:1px solid #2d1b69;color:#7c3aed;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700;font-family:'Courier New',monospace;transition:all .2s">OFF</button>
         <span style="font-size:10px;color:#64748b">Divide os dados em <b style="color:#00d4ff">70% treino</b> / <b style="color:#f59e0b">30% teste OOS</b> — detecta se a estratégia está overfitted ou é genuinamente robusta</span>
     </div>
+    </div><!-- end toggles row -->
 
     <!-- ASSET TABS -->
     <div class="tabs">
@@ -530,6 +541,76 @@ function renderWFResults(asset, trainTrades, testTrades, trainCandles, testCandl
     el.classList.add('active');
 }
 
+// ─── CONFLUENCE PATTERN STATE ───
+let confluenceEnabled = false;
+
+function toggleConfluence(btn) {
+    confluenceEnabled = !confluenceEnabled;
+    if (confluenceEnabled) {
+        btn.textContent = 'ON';
+        btn.style.cssText = "padding:5px 16px;background:#10b981;border:1px solid #10b981;color:#fff;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700;font-family:'Courier New',monospace";
+    } else {
+        btn.textContent = 'OFF';
+        btn.style.cssText = "padding:5px 16px;background:#0d1526;border:1px solid #065f46;color:#10b981;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700;font-family:'Courier New',monospace";
+    }
+    ['xau','btc','eur','jpy'].forEach(a => {
+        if (assetData[a]) {
+            const stratBtn = document.querySelector(`#tab-${a} .strat-btn.active`);
+            if (stratBtn) runBacktest(a, activeStrat[a], stratBtn);
+        }
+    });
+}
+
+// ─── CANDLESTICK PATTERN DETECTOR ───
+// Retorna { bull, bear, name } para a vela atual vs vela anterior
+function detectCandlePattern(c, prev) {
+    if (!c || !prev) return { bull: false, bear: false, name: '' };
+
+    const body     = Math.abs(c.close - c.open);
+    const range    = c.high - c.low || 0.0001;
+    const bullCurr = c.close > c.open;
+    const bearCurr = c.close < c.open;
+    const bullPrev = prev.close > prev.open;
+    const bearPrev = prev.close < prev.open;
+    const lower    = Math.min(c.open, c.close) - c.low;
+    const upper    = c.high - Math.max(c.open, c.close);
+    const prevBody = Math.abs(prev.close - prev.open) || 0.0001;
+
+    // 1. Engolfo de Alta — prev bearish + curr bullish maior
+    if (bearPrev && bullCurr && c.open <= prev.close && c.close >= prev.open && body >= prevBody * 0.9) {
+        return { bull: true, bear: false, name: 'Engolfo Alta' };
+    }
+    // 1b. Engolfo de Baixa — prev bullish + curr bearish maior
+    if (bullPrev && bearCurr && c.open >= prev.close && c.close <= prev.open && body >= prevBody * 0.9) {
+        return { bull: false, bear: true, name: 'Engolfo Baixa' };
+    }
+    // 2. Martelo — pavio inferior longo (≥2× corpo), pavio superior pequeno
+    if (lower >= 2 * Math.max(body, range * 0.04) && upper <= body * 0.6 && lower / range >= 0.45) {
+        return { bull: true, bear: false, name: 'Martelo' };
+    }
+    // 2b. Estrela Cadente / Enforcado — pavio superior longo
+    if (upper >= 2 * Math.max(body, range * 0.04) && lower <= body * 0.6 && upper / range >= 0.45) {
+        return { bull: false, bear: true, name: 'Estrela Cadente' };
+    }
+    // 3. Pin Bar Alta — pavio inferior ≥60% do range, corpo ≤25%
+    if (lower / range >= 0.58 && body / range <= 0.25) {
+        return { bull: true, bear: false, name: 'Pin Bar Alta' };
+    }
+    // 3b. Pin Bar Baixa — pavio superior ≥60% do range
+    if (upper / range >= 0.58 && body / range <= 0.25) {
+        return { bull: false, bear: true, name: 'Pin Bar Baixa' };
+    }
+    // 4. Marubozu Alta — corpo ≥70% do range (momentum puro)
+    if (bullCurr && body / range >= 0.70) {
+        return { bull: true, bear: false, name: 'Marubozu Alta' };
+    }
+    // 4b. Marubozu Baixa
+    if (bearCurr && body / range >= 0.70) {
+        return { bull: false, bear: true, name: 'Marubozu Baixa' };
+    }
+    return { bull: false, bear: false, name: '' };
+}
+
 // ─── CUSTO POR TRADE (spread + comissão estimado por ativo) ───
 // Valor em % do preço de entrada. Aplicado na entrada E na saída (round-trip = 2×).
 // Fonte: spreads médios em corretoras populares (IC Markets, XM, etc.)
@@ -678,6 +759,7 @@ function isGoodSession(timestampSec, asset) {
 /// ─── HELPER: calcula lucro líquido (descontando spread + comissão round-trip) ───
 // currentAsset é preenchido por runBacktest() antes de chamar strat.run()
 let _currentAsset = 'xau';
+let _entryPattern = '';
 function tradePct(type, entry, exit) {
     const rawPct = type === 'COMPRA'
         ? ((exit - entry) / entry) * 100
@@ -725,17 +807,23 @@ const STRATEGIES = {
                     const biasOkLong  = bias==='BUY'||bias==='NEUTRAL';
                     const biasOkShort = bias==='SELL'||bias==='NEUTRAL';
 
+                    const pat = detectCandlePattern(c, prev);
+
                     // LONG: pullback ao low tocando EMA20 com tolerância baseada em ATR
                     if(longAlign && biasOkLong
                         && Math.abs(prev.low-e20[i-1])<atrTol*1.2
-                        && c.close>c.open && c.close>e9[i] && strongBody){
+                        && c.close>c.open && c.close>e9[i] && strongBody
+                        && (!confluenceEnabled || pat.bull)){
                         inTrade=true; tradeType='COMPRA'; entryIdx=i; entryPrice=c.close;
+                        _entryPattern = pat.name || 'Corpo Forte';
                     }
                     // SHORT: pullback ao high tocando EMA20 com tolerância ATR
                     else if(shortAlign && biasOkShort
                         && Math.abs(prev.high-e20[i-1])<atrTol*1.2
-                        && c.close<c.open && c.close<e9[i] && strongBody){
+                        && c.close<c.open && c.close<e9[i] && strongBody
+                        && (!confluenceEnabled || pat.bear)){
                         inTrade=true; tradeType='VENDA'; entryIdx=i; entryPrice=c.close;
+                        _entryPattern = pat.name || 'Corpo Forte';
                     }
                 } else {
                     let exit=false;
@@ -743,7 +831,7 @@ const STRATEGIES = {
                     else                     exit=c.close>e9[i]||c.high>e50[i]*1.002;
                     if(exit){
                         const pct=tradePct(tradeType,entryPrice,c.close);
-                        trades.push({entryIdx,exitIdx:i,entryPrice,exitPrice:c.close,pct,win:pct>0,type:tradeType});
+                        trades.push({entryIdx,exitIdx:i,entryPrice,exitPrice:c.close,pct,win:pct>0,type:tradeType,pattern:_entryPattern});
                         inTrade=false;
                     }
                 }
@@ -787,23 +875,29 @@ const STRATEGIES = {
                     const isInside = inside.high<=mother.high && inside.low>=mother.low;
                     if(!isInside) continue;
 
+                    const patConf = detectCandlePattern(confirm, inside);
+
                     // Rompimento de alta: confirmação fecha acima do high da mãe + trend up
-                    if(confirm.close>mother.high && e9[i]>e50[i] && (bias==='BUY'||bias==='NEUTRAL')){
+                    if(confirm.close>mother.high && e9[i]>e50[i] && (bias==='BUY'||bias==='NEUTRAL')
+                        && (!confluenceEnabled || patConf.bull)){
                         entryPrice=confirm.close;
                         slPrice   =mother.low - atrVal*0.1;
                         const risk=entryPrice-slPrice;
                         if(risk<=0) continue;
                         tpPrice=entryPrice+2*risk;
                         inTrade=true; tradeType='COMPRA'; entryIdx=i+1;
+                        _entryPattern = patConf.name || 'Breakout Alta';
                     }
                     // Rompimento de baixa: confirmação fecha abaixo do low da mãe + trend down
-                    else if(confirm.close<mother.low && e9[i]<e50[i] && (bias==='SELL'||bias==='NEUTRAL')){
+                    else if(confirm.close<mother.low && e9[i]<e50[i] && (bias==='SELL'||bias==='NEUTRAL')
+                        && (!confluenceEnabled || patConf.bear)){
                         entryPrice=confirm.close;
                         slPrice   =mother.high + atrVal*0.1;
                         const risk=slPrice-entryPrice;
                         if(risk<=0) continue;
                         tpPrice=entryPrice-2*risk;
                         inTrade=true; tradeType='VENDA'; entryIdx=i+1;
+                        _entryPattern = patConf.name || 'Breakout Baixa';
                     }
                 } else {
                     const c=candles[i];
@@ -817,7 +911,7 @@ const STRATEGIES = {
                     }
                     if(exit){
                         const pct=tradePct(tradeType,entryPrice,exitPrice);
-                        trades.push({entryIdx,exitIdx:i,entryPrice,exitPrice,pct,win:pct>0,type:tradeType,sl:slPrice,tp:tpPrice,hasSL:true});
+                        trades.push({entryIdx,exitIdx:i,entryPrice,exitPrice,pct,win:pct>0,type:tradeType,sl:slPrice,tp:tpPrice,hasSL:true,pattern:_entryPattern});
                         inTrade=false;
                     }
                 }
@@ -855,15 +949,21 @@ const STRATEGIES = {
                     if(rsi[i]===null||atr[i]===null||bb.lower[i]===null) continue;
                     const e50Slope=e50[i]-e50[Math.max(0,i-10)];
 
+                    const patR = detectCandlePattern(c, candles[i-1]);
+
                     // COMPRA: RSI sobrevendido + preço tocou/fechou abaixo da banda inferior
-                    if(rsi[i]<30 && c.close<=bb.lower[i]*1.001 && e50Slope>=-e50[i]*0.002){
+                    if(rsi[i]<30 && c.close<=bb.lower[i]*1.001 && e50Slope>=-e50[i]*0.002
+                        && (!confluenceEnabled || patR.bull)){
                         inTrade=true; tradeType='COMPRA'; entryIdx=i; entryPrice=c.close;
                         slPrice=entryPrice-1.5*atr[i];
+                        _entryPattern = patR.name || 'RSI Extremo';
                     }
                     // VENDA: RSI sobrecomprado + preço tocou/fechou acima da banda superior
-                    else if(rsi[i]>70 && c.close>=bb.upper[i]*0.999 && e50Slope<=e50[i]*0.002){
+                    else if(rsi[i]>70 && c.close>=bb.upper[i]*0.999 && e50Slope<=e50[i]*0.002
+                        && (!confluenceEnabled || patR.bear)){
                         inTrade=true; tradeType='VENDA'; entryIdx=i; entryPrice=c.close;
                         slPrice=entryPrice+1.5*atr[i];
+                        _entryPattern = patR.name || 'RSI Extremo';
                     }
                 } else {
                     let exit=false, exitPrice=c.close;
@@ -878,7 +978,7 @@ const STRATEGIES = {
                     }
                     if(exit){
                         const pct=tradePct(tradeType,entryPrice,exitPrice);
-                        trades.push({entryIdx,exitIdx:i,entryPrice,exitPrice,pct,win:pct>0,type:tradeType,sl:slPrice,hasSL:true});
+                        trades.push({entryIdx,exitIdx:i,entryPrice,exitPrice,pct,win:pct>0,type:tradeType,sl:slPrice,hasSL:true,pattern:_entryPattern});
                         inTrade=false;
                     }
                 }
@@ -913,19 +1013,25 @@ const STRATEGIES = {
                 if(!inTrade){
                     if(!adx[i]||adx[i]<25) continue;
                     const atrVal=atr[i]||0;
+                    const patM=detectCandlePattern(c, candles[i-1]);
+
                     // Compra: cruzamento acima + MACD > 0 (momentum positivo confirmado)
-                    if(macd[i]>signal[i]&&macd[i-1]<=signal[i-1]&&macd[i]>0&&(bias==='BUY'||bias==='NEUTRAL')){
+                    if(macd[i]>signal[i]&&macd[i-1]<=signal[i-1]&&macd[i]>0&&(bias==='BUY'||bias==='NEUTRAL')
+                        &&(!confluenceEnabled||patM.bull)){
                         entryPrice=c.close;
                         slPrice=entryPrice-2*atrVal;
                         tpPrice=entryPrice+3*atrVal;
                         inTrade=true; tradeType='COMPRA'; entryIdx=i;
+                        _entryPattern=patM.name||'Cruz MACD';
                     }
                     // Venda: cruzamento abaixo + MACD < 0 (momentum negativo confirmado)
-                    else if(macd[i]<signal[i]&&macd[i-1]>=signal[i-1]&&macd[i]<0&&(bias==='SELL'||bias==='NEUTRAL')){
+                    else if(macd[i]<signal[i]&&macd[i-1]>=signal[i-1]&&macd[i]<0&&(bias==='SELL'||bias==='NEUTRAL')
+                        &&(!confluenceEnabled||patM.bear)){
                         entryPrice=c.close;
                         slPrice=entryPrice+2*atrVal;
                         tpPrice=entryPrice-3*atrVal;
                         inTrade=true; tradeType='VENDA'; entryIdx=i;
+                        _entryPattern=patM.name||'Cruz MACD';
                     }
                 } else {
                     let exit=false, exitPrice=c.close;
@@ -940,7 +1046,7 @@ const STRATEGIES = {
                     }
                     if(exit){
                         const pct=tradePct(tradeType,entryPrice,exitPrice);
-                        trades.push({entryIdx,exitIdx:i,entryPrice,exitPrice,pct,win:pct>0,type:tradeType,sl:slPrice,tp:tpPrice,hasSL:true});
+                        trades.push({entryIdx,exitIdx:i,entryPrice,exitPrice,pct,win:pct>0,type:tradeType,sl:slPrice,tp:tpPrice,hasSL:true,pattern:_entryPattern});
                         inTrade=false;
                     }
                 }
@@ -982,14 +1088,19 @@ const STRATEGIES = {
                     const atrVal=atr[i]||0;
 
                     // FILTRO 3: rompimento deve ser > 0.5×ATR (sem esse buffer, pega fakeout)
-                    if(c.close>high20 && (c.close-high20)>atrVal*0.5){
+                    const patBk=detectCandlePattern(c, candles[i-1]);
+                    if(c.close>high20 && (c.close-high20)>atrVal*0.5
+                        && (!confluenceEnabled||patBk.bull)){
                         slPrice =low5*0.9995;
                         tpPrice =c.close+2*(c.close-slPrice);
                         inTrade=true; tradeType='COMPRA'; entryIdx=i; entryPrice=c.close;
-                    } else if(c.close<low20 && (low20-c.close)>atrVal*0.5){
+                        _entryPattern=patBk.name||'Rompimento';
+                    } else if(c.close<low20 && (low20-c.close)>atrVal*0.5
+                        && (!confluenceEnabled||patBk.bear)){
                         slPrice =high5*1.0005;
                         tpPrice =c.close-2*(slPrice-c.close);
                         inTrade=true; tradeType='VENDA'; entryIdx=i; entryPrice=c.close;
+                        _entryPattern=patBk.name||'Rompimento';
                     }
                 } else {
                     let exit=false, exitPrice=c.close;
@@ -1002,7 +1113,7 @@ const STRATEGIES = {
                     }
                     if(exit){
                         const pct=tradePct(tradeType,entryPrice,exitPrice);
-                        trades.push({entryIdx,exitIdx:i,entryPrice,exitPrice,pct,win:pct>0,type:tradeType,sl:slPrice,tp:tpPrice,hasSL:true});
+                        trades.push({entryIdx,exitIdx:i,entryPrice,exitPrice,pct,win:pct>0,type:tradeType,sl:slPrice,tp:tpPrice,hasSL:true,pattern:_entryPattern});
                         inTrade=false;
                     }
                 }
@@ -1069,6 +1180,13 @@ function runBacktest(asset, stratKey, btn) {
         <div class="summary-card" style="border-color:#00ff4133"><div class="s-label">🟢 Longs / WR</div><div class="s-value s-green">${longs.length} / ${wrL}%</div></div>
         <div class="summary-card" style="border-color:#ff335533"><div class="s-label">🔴 Shorts / WR</div><div class="s-value s-red">${shorts.length} / ${wrS}%</div></div>
         <div class="summary-card" style="border-color:#ffaa0055"><div class="s-label">💸 Custo/Trade</div><div class="s-value s-yellow" style="font-size:16px">−${costRound}%</div><div style="font-size:9px;color:#64748b;margin-top:4px">${costLabel}</div></div>
+        ${confluenceEnabled ? (() => {
+            const patCount = trades.filter(t=>t.pattern&&t.pattern!=='').length;
+            const patMap = {};
+            trades.forEach(t=>{if(t.pattern)patMap[t.pattern]=(patMap[t.pattern]||0)+1;});
+            const topPat = Object.entries(patMap).sort((a,b)=>b[1]-a[1]).slice(0,2).map(([k,v])=>`${k}(${v})`).join(', ')||'—';
+            return `<div class="summary-card" style="border-color:#10b98155"><div class="s-label">🕯️ Padrões Conf.</div><div class="s-value" style="color:#10b981;font-size:20px">${patCount}</div><div style="font-size:9px;color:#64748b;margin-top:4px">${topPat}</div></div>`;
+        })() : ''}
     `;
 
     // Salva para exportação CSV
@@ -1179,12 +1297,14 @@ function renderTradesTable(asset, candles, trades){
         return;
     }
     const fmt = v => asset==='btc' ? '$'+Math.round(v).toLocaleString() : asset==='eur' ? v.toFixed(5) : asset==='jpy' ? v.toFixed(3) : '$'+v.toFixed(2);
-    const hasSlTp = trades.some(t => t.sl != null);
-    // Update table headers if breakout (has SL/TP)
+    const hasSlTp  = trades.some(t => t.sl != null);
+    const hasPat   = confluenceEnabled && trades.some(t => t.pattern);
+    // Update table headers
     const thead = document.querySelector('#'+asset+'-trades-table thead tr');
+    const patHead = hasPat ? '<th style="color:#10b981">🕯️ Padrão</th>' : '';
     thead.innerHTML = hasSlTp
-        ? '<th>#</th><th>Entrada</th><th>Saída</th><th>Tipo</th><th>Preço Entrada</th><th>🛑 Stop Loss</th><th>🎯 Take Profit</th><th>Preço Saída</th><th>Resultado %</th><th>Resultado $</th>'
-        : '<th>#</th><th>Entrada</th><th>Saída</th><th>Tipo</th><th>Preço Entrada</th><th>Preço Saída</th><th>Resultado %</th><th>Resultado $</th>';
+        ? `<th>#</th><th>Entrada</th><th>Saída</th><th>Tipo</th>${patHead}<th>Preço Entrada</th><th>🛑 Stop Loss</th><th>🎯 Take Profit</th><th>Preço Saída</th><th>Resultado %</th><th>Resultado $</th>`
+        : `<th>#</th><th>Entrada</th><th>Saída</th><th>Tipo</th>${patHead}<th>Preço Entrada</th><th>Preço Saída</th><th>Resultado %</th><th>Resultado $</th>`;
     let equity=1000;
     tbody.innerHTML = trades.map((t,i)=>{
         const earn = equity*(t.pct/100);
@@ -1192,11 +1312,15 @@ function renderTradesTable(asset, candles, trades){
         const slTpCols = hasSlTp
             ? `<td style="color:#ff335599">${t.sl ? fmt(t.sl) : '—'}</td><td style="color:#00ff4199">${t.tp ? fmt(t.tp) : '—'}</td>`
             : '';
+        const patCol = hasPat
+            ? `<td style="color:#10b981;font-size:10px">${t.pattern||'—'}</td>`
+            : '';
         return `<tr class="${t.win?'win':'loss'}">
             <td>${i+1}</td>
             <td>${new Date(candles[t.entryIdx].time*1000).toLocaleDateString('pt-BR')}</td>
             <td>${new Date(candles[t.exitIdx].time*1000).toLocaleDateString('pt-BR')}</td>
             <td>${t.type}</td>
+            ${patCol}
             <td>${fmt(t.entryPrice)}</td>
             ${slTpCols}
             <td>${fmt(t.exitPrice)}</td>
@@ -1217,7 +1341,10 @@ function exportCSV(asset) {
     const strat   = activeStrat[asset].toUpperCase();
     const tf      = activeTF[asset].toUpperCase();
 
-    const headers = ['#','Data Entrada','Data Saída','Tipo','Preço Entrada',
+    const hasPat = trades.some(t => t.pattern);
+    const headers = ['#','Data Entrada','Data Saída','Tipo',
+        ...(hasPat ? ['Padrão'] : []),
+        'Preço Entrada',
         ...(hasSlTp ? ['Stop Loss','Take Profit'] : []),
         'Preço Saída','Resultado %','Resultado $','Equidade'];
 
@@ -1227,7 +1354,9 @@ function exportCSV(asset) {
         equity += earn;
         const dateIn  = new Date(candles[t.entryIdx].time * 1000).toLocaleDateString('pt-BR');
         const dateOut = new Date(candles[t.exitIdx].time  * 1000).toLocaleDateString('pt-BR');
-        const base = [i+1, dateIn, dateOut, t.type, t.entryPrice.toFixed(5)];
+        const base = [i+1, dateIn, dateOut, t.type];
+        if (hasPat) base.push(t.pattern || '');
+        base.push(t.entryPrice.toFixed(5));
         if (hasSlTp) base.push(t.sl ? t.sl.toFixed(5) : '', t.tp ? t.tp.toFixed(5) : '');
         base.push(t.exitPrice.toFixed(5), (t.pct>0?'+':'')+t.pct.toFixed(2)+'%', (earn>0?'+':'')+'$'+earn.toFixed(2), '$'+equity.toFixed(2));
         return base.join(',');
