@@ -72,6 +72,21 @@
 
         /* EQUITY */
         #equity-chart-xau, #equity-chart-btc, #equity-chart-eur, #equity-chart-jpy { height:220px; }
+
+        /* WALK-FORWARD */
+        .wf-panel { background:#070b14; border:1px solid #2d1b69; border-left:3px solid #7c3aed; border-radius:8px; padding:16px; margin-bottom:20px; display:none; }
+        .wf-panel.active { display:block; animation:fadeIn .3s; }
+        .wf-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px; }
+        @media(max-width:700px){ .wf-grid{grid-template-columns:1fr;} }
+        .wf-block { background:#0d1526; border:1px solid #1e3a5f; border-radius:8px; padding:14px; }
+        .wf-block.train h4 { color:#00d4ff; font-size:11px; text-transform:uppercase; margin-bottom:10px; letter-spacing:.08em; }
+        .wf-block.test  h4 { color:#f59e0b; font-size:11px; text-transform:uppercase; margin-bottom:10px; letter-spacing:.08em; }
+        .wf-row { display:flex; justify-content:space-between; font-size:12px; padding:4px 0; border-bottom:1px solid #111827; }
+        .wf-row:last-child { border:none; }
+        .wf-verdict { text-align:center; padding:14px; border-radius:8px; font-size:14px; font-weight:700; margin-top:12px; }
+        .wf-robust  { background:#00ff4115; border:2px solid #00ff41; color:#00ff41; }
+        .wf-warning { background:#ffaa0015; border:2px solid #ffaa00; color:#ffaa00; }
+        .wf-overfit { background:#ff335515; border:2px solid #ff3355; color:#ff3355; }
     </style>
 </head>
 <body>
@@ -108,6 +123,23 @@
         <span id="status-msg">Carregando dados...</span>
     </div>
 
+    <!-- CUSTO / SPREAD SELECTOR -->
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding:10px 16px;background:#070b14;border:1px solid #1e3a5f;border-radius:8px;flex-wrap:wrap">
+        <span style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.05em">💸 Custo/Trade (spread + comissão):</span>
+        <button class="tf-btn-bt" id="cost-zero"   onclick="setCost('zero',this)">Sem custo</button>
+        <button class="tf-btn-bt active" id="cost-low" onclick="setCost('low',this)">ECN — baixo</button>
+        <button class="tf-btn-bt" id="cost-medium" onclick="setCost('medium',this)">Standard — médio</button>
+        <button class="tf-btn-bt" id="cost-high"   onclick="setCost('high',this)">Varejo — alto</button>
+        <span id="cost-desc" style="font-size:10px;color:#ffaa00;margin-left:6px">Spread + comissão ECN realista (ex: IC Markets)</span>
+    </div>
+
+    <!-- WALK-FORWARD TOGGLE -->
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding:10px 16px;background:#070b14;border:1px solid #2d1b69;border-radius:8px;flex-wrap:wrap">
+        <span style="font-size:11px;color:#7c3aed;font-weight:700;text-transform:uppercase;letter-spacing:.05em">🔄 Walk-Forward Test:</span>
+        <button id="wf-toggle" onclick="toggleWF(this)" style="padding:5px 16px;background:#0d1526;border:1px solid #2d1b69;color:#7c3aed;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700;font-family:'Courier New',monospace;transition:all .2s">OFF</button>
+        <span style="font-size:10px;color:#64748b">Divide os dados em <b style="color:#00d4ff">70% treino</b> / <b style="color:#f59e0b">30% teste OOS</b> — detecta se a estratégia está overfitted ou é genuinamente robusta</span>
+    </div>
+
     <!-- ASSET TABS -->
     <div class="tabs">
         <button class="tab-btn active" onclick="switchTab('xau',this)">⚜️ XAUUSD</button>
@@ -120,7 +152,7 @@
     <div class="tab-content active" id="tab-xau">
         <div class="strat-selector">
             <button class="strat-btn active" onclick="runBacktest('xau','trend',this)">🎯 EMA Tendência (9/20/50)</button>
-            <button class="strat-btn" onclick="runBacktest('xau','ema',this)">📈 EMA Crossover (9/20)</button>
+            <button class="strat-btn" onclick="runBacktest('xau','ema',this)">🕯️ Inside Bar</button>
             <button class="strat-btn" onclick="runBacktest('xau','rsi',this)">📊 RSI Reversão</button>
             <button class="strat-btn" onclick="runBacktest('xau','macd',this)">⚙️ MACD Crossover</button>
             <button class="strat-btn" onclick="runBacktest('xau','breakout',this)">🚀 Breakout (20p)</button>
@@ -138,6 +170,9 @@
 
         <!-- Summary -->
         <div class="summary-grid" id="xau-summary"></div>
+
+        <!-- Walk-Forward Panel -->
+        <div class="wf-panel" id="wf-xau"></div>
 
         <!-- Chart with entries -->
         <div class="chart-section">
@@ -179,7 +214,7 @@
     <div class="tab-content" id="tab-btc">
         <div class="strat-selector">
             <button class="strat-btn active" onclick="runBacktest('btc','trend',this)">🎯 EMA Tendência (9/20/50)</button>
-            <button class="strat-btn" onclick="runBacktest('btc','ema',this)">📈 EMA Crossover (9/20)</button>
+            <button class="strat-btn" onclick="runBacktest('btc','ema',this)">🕯️ Inside Bar</button>
             <button class="strat-btn" onclick="runBacktest('btc','rsi',this)">📊 RSI Reversão</button>
             <button class="strat-btn" onclick="runBacktest('btc','macd',this)">⚙️ MACD Crossover</button>
             <button class="strat-btn" onclick="runBacktest('btc','breakout',this)">🚀 Breakout (20p)</button>
@@ -193,6 +228,7 @@
         </div>
         <div class="strategy-explain" id="btc-explain"></div>
         <div class="summary-grid" id="btc-summary"></div>
+        <div class="wf-panel" id="wf-btc"></div>
         <div class="chart-section">
             <div class="chart-header">
                 <span class="chart-header-title">🕯️ Entradas da Estratégia no Gráfico</span>
@@ -228,7 +264,7 @@
     <div class="tab-content" id="tab-eur">
         <div class="strat-selector">
             <button class="strat-btn active" onclick="runBacktest('eur','trend',this)">🎯 EMA Tendência (9/20/50)</button>
-            <button class="strat-btn" onclick="runBacktest('eur','ema',this)">📈 EMA Crossover (9/20)</button>
+            <button class="strat-btn" onclick="runBacktest('eur','ema',this)">🕯️ Inside Bar</button>
             <button class="strat-btn" onclick="runBacktest('eur','rsi',this)">📊 RSI Reversão</button>
             <button class="strat-btn" onclick="runBacktest('eur','macd',this)">⚙️ MACD Crossover</button>
             <button class="strat-btn" onclick="runBacktest('eur','breakout',this)">🚀 Breakout (20p)</button>
@@ -242,6 +278,7 @@
         </div>
         <div class="strategy-explain" id="eur-explain"></div>
         <div class="summary-grid" id="eur-summary"></div>
+        <div class="wf-panel" id="wf-eur"></div>
         <div class="chart-section">
             <div class="chart-header">
                 <span class="chart-header-title">🕯️ Entradas da Estratégia — EURUSD</span>
@@ -277,7 +314,7 @@
     <div class="tab-content" id="tab-jpy">
         <div class="strat-selector">
             <button class="strat-btn active" onclick="runBacktest('jpy','trend',this)">🎯 EMA Tendência (9/20/50)</button>
-            <button class="strat-btn" onclick="runBacktest('jpy','ema',this)">📈 EMA Crossover (9/20)</button>
+            <button class="strat-btn" onclick="runBacktest('jpy','ema',this)">🕯️ Inside Bar</button>
             <button class="strat-btn" onclick="runBacktest('jpy','rsi',this)">📊 RSI Reversão</button>
             <button class="strat-btn" onclick="runBacktest('jpy','macd',this)">⚙️ MACD Crossover</button>
             <button class="strat-btn" onclick="runBacktest('jpy','breakout',this)">🚀 Breakout (20p)</button>
@@ -291,6 +328,7 @@
         </div>
         <div class="strategy-explain" id="jpy-explain"></div>
         <div class="summary-grid" id="jpy-summary"></div>
+        <div class="wf-panel" id="wf-jpy"></div>
         <div class="chart-section">
             <div class="chart-header">
                 <span class="chart-header-title">🕯️ Entradas da Estratégia — USDJPY</span>
@@ -330,8 +368,182 @@ const btCharts   = { xau: null, btc: null, eur: null, jpy: null };
 const eqCharts   = { xau: null, btc: null, eur: null, jpy: null };
 const activeStrat = { xau: 'trend', btc: 'trend', eur: 'trend', jpy: 'trend' };
 const activeTF    = { xau: '1h',    btc: '1h',    eur: '1h',    jpy: '1h' };
-const lastTrades  = { xau: [],     btc: [],     eur: [],     jpy: [] };  // salva trades para exportar CSV
+const lastTrades  = { xau: [],     btc: [],     eur: [],     jpy: [] };
 const lastCandles = { xau: [],     btc: [],     eur: [],     jpy: [] };
+
+// ─── WALK-FORWARD STATE ───
+let wfEnabled = false;
+
+function toggleWF(btn) {
+    wfEnabled = !wfEnabled;
+    if (wfEnabled) {
+        btn.textContent = 'ON';
+        btn.style.cssText = 'padding:5px 16px;background:#7c3aed;border:1px solid #7c3aed;color:#fff;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700;font-family:\'Courier New\',monospace';
+    } else {
+        btn.textContent = 'OFF';
+        btn.style.cssText = 'padding:5px 16px;background:#0d1526;border:1px solid #2d1b69;color:#7c3aed;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700;font-family:\'Courier New\',monospace';
+        // Hide WF panels
+        ['xau','btc','eur','jpy'].forEach(a => {
+            const el = document.getElementById('wf-'+a);
+            if (el) el.classList.remove('active');
+        });
+    }
+    // Re-run current visible backtest
+    ['xau','btc','eur','jpy'].forEach(a => {
+        if (assetData[a]) {
+            const stratBtn = document.querySelector(`#tab-${a} .strat-btn.active`);
+            if (stratBtn) runBacktest(a, activeStrat[a], stratBtn);
+        }
+    });
+}
+
+// Calcula stats resumidas de um array de trades
+function calcWFStats(trades) {
+    if (!trades.length) return { total:0, wr:0, pf:0, sumPct:0, avgWin:0, avgLoss:0 };
+    const wins   = trades.filter(t => t.win);
+    const losses = trades.filter(t => !t.win);
+    const gw     = wins.reduce((a,t) => a+t.pct, 0);
+    const gl     = Math.abs(losses.reduce((a,t) => a+t.pct, 0));
+    return {
+        total:   trades.length,
+        wr:      wins.length / trades.length * 100,
+        pf:      gl > 0 ? gw / gl : wins.length > 0 ? 99 : 0,
+        sumPct:  trades.reduce((a,t) => a+t.pct, 0),
+        avgWin:  wins.length   ? gw / wins.length   : 0,
+        avgLoss: losses.length ? losses.reduce((a,t) => a+t.pct, 0) / losses.length : 0,
+    };
+}
+
+function runWalkForward(asset, stratKey, candles, biasCandles) {
+    const strat    = STRATEGIES[stratKey];
+    const splitIdx = Math.floor(candles.length * 0.7);
+    if (splitIdx < 60) return; // poucos dados — não roda
+
+    const trainCandles = candles.slice(0, splitIdx);
+    const testCandles  = candles.slice(splitIdx);
+
+    // Bias aproximado (separa proporcional)
+    const biasSplit    = biasCandles.length > 10 ? Math.floor(biasCandles.length * 0.7) : 0;
+    const trainBias    = biasSplit > 0 ? biasCandles.slice(0, biasSplit) : biasCandles;
+    const testBias     = biasSplit > 0 ? biasCandles.slice(biasSplit)    : biasCandles;
+
+    _currentAsset = asset;
+    const trainTrades = strat.run(trainCandles, trainBias, asset);
+    const testTrades  = strat.run(testCandles,  testBias,  asset);
+
+    renderWFResults(asset, trainTrades, testTrades, trainCandles, testCandles);
+}
+
+function renderWFResults(asset, trainTrades, testTrades, trainCandles, testCandles) {
+    const el = document.getElementById('wf-'+asset);
+    if (!el) return;
+
+    const tr = calcWFStats(trainTrades);
+    const te = calcWFStats(testTrades);
+
+    // Robustness metrics
+    const wfEff  = tr.wr > 0 ? Math.min(te.wr / tr.wr, 2) : 0;
+    const pfEff  = tr.pf > 0 ? Math.min(te.pf / tr.pf, 2) : 0;
+    const robScore = Math.max(0, Math.min(100, Math.round((wfEff * 0.5 + pfEff * 0.5) * 100)));
+
+    let verdictClass, verdictText, verdictIcon, verdictDesc;
+    if (robScore >= 70) {
+        verdictClass = 'wf-robust';
+        verdictText  = 'ESTRATÉGIA ROBUSTA';
+        verdictIcon  = '✅';
+        verdictDesc  = 'A estratégia performou de forma similar fora da amostra de treino. Pode ser usada com maior confiança.';
+    } else if (robScore >= 45) {
+        verdictClass = 'wf-warning';
+        verdictText  = 'ATENÇÃO — PERFORMANCE DEGRADADA';
+        verdictIcon  = '⚠️';
+        verdictDesc  = 'Queda significativa no período de teste. Revise parâmetros ou adicione mais dados históricos antes de operar.';
+    } else {
+        verdictClass = 'wf-overfit';
+        verdictText  = 'OVERFITTED — NÃO CONFIÁVEL';
+        verdictIcon  = '❌';
+        verdictDesc  = 'A estratégia funciona apenas nos dados de treino. Provável overfitting — não use em conta real com esses parâmetros.';
+    }
+
+    const trainPeriod = trainCandles.length > 1
+        ? `${new Date(trainCandles[0].time*1000).toLocaleDateString('pt-BR')} → ${new Date(trainCandles[trainCandles.length-1].time*1000).toLocaleDateString('pt-BR')}`
+        : '—';
+    const testPeriod = testCandles.length > 1
+        ? `${new Date(testCandles[0].time*1000).toLocaleDateString('pt-BR')} → ${new Date(testCandles[testCandles.length-1].time*1000).toLocaleDateString('pt-BR')}`
+        : '—';
+
+    const fmtN  = (v, d=1) => isFinite(v) && !isNaN(v) ? v.toFixed(d) : '—';
+    const clr   = v => v >= 0 ? '#00ff41' : '#ff3355';
+    const eff2c = v => v >= 0.7 ? '#00ff41' : v >= 0.5 ? '#ffaa00' : '#ff3355';
+
+    el.innerHTML = `
+        <div style="font-size:12px;color:#7c3aed;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            🔄 WALK-FORWARD ANALYSIS
+            <span style="font-size:10px;color:#64748b;font-weight:400">Compara in-sample (treino 70%) vs out-of-sample (teste 30%)</span>
+        </div>
+
+        <div class="wf-grid">
+            <div class="wf-block train">
+                <h4>📚 Treino — In-Sample (70%)<br><span style="color:#475569;font-size:9px;text-transform:none;font-weight:400">${trainPeriod}</span></h4>
+                <div class="wf-row"><span style="color:#64748b">Total Trades</span><span style="color:#00d4ff">${tr.total}</span></div>
+                <div class="wf-row"><span style="color:#64748b">Win Rate</span><span style="color:${tr.wr>=50?'#00ff41':'#ff3355'}">${fmtN(tr.wr)}%</span></div>
+                <div class="wf-row"><span style="color:#64748b">Fator Lucro</span><span style="color:${tr.pf>=1?'#00ff41':'#ff3355'}">${fmtN(tr.pf,2)}</span></div>
+                <div class="wf-row"><span style="color:#64748b">Lucro Total</span><span style="color:${clr(tr.sumPct)}">${tr.sumPct>=0?'+':''}${fmtN(tr.sumPct,2)}%</span></div>
+                <div class="wf-row"><span style="color:#64748b">Média Win</span><span style="color:#00ff41">+${fmtN(tr.avgWin,2)}%</span></div>
+                <div class="wf-row"><span style="color:#64748b">Média Loss</span><span style="color:#ff3355">${fmtN(tr.avgLoss,2)}%</span></div>
+            </div>
+            <div class="wf-block test">
+                <h4>🧪 Teste — Out-of-Sample (30%)<br><span style="color:#475569;font-size:9px;text-transform:none;font-weight:400">${testPeriod}</span></h4>
+                <div class="wf-row"><span style="color:#64748b">Total Trades</span><span style="color:#f59e0b">${te.total}</span></div>
+                <div class="wf-row"><span style="color:#64748b">Win Rate</span><span style="color:${te.wr>=50?'#00ff41':'#ff3355'}">${fmtN(te.wr)}%</span></div>
+                <div class="wf-row"><span style="color:#64748b">Fator Lucro</span><span style="color:${te.pf>=1?'#00ff41':'#ff3355'}">${fmtN(te.pf,2)}</span></div>
+                <div class="wf-row"><span style="color:#64748b">Lucro Total</span><span style="color:${clr(te.sumPct)}">${te.sumPct>=0?'+':''}${fmtN(te.sumPct,2)}%</span></div>
+                <div class="wf-row"><span style="color:#64748b">Média Win</span><span style="color:#00ff41">+${fmtN(te.avgWin,2)}%</span></div>
+                <div class="wf-row"><span style="color:#64748b">Média Loss</span><span style="color:#ff3355">${fmtN(te.avgLoss,2)}%</span></div>
+            </div>
+        </div>
+
+        <!-- Robustness metrics -->
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px">
+            <div style="background:#0d1526;border:1px solid #2d1b69;border-radius:8px;padding:12px;text-align:center">
+                <div style="font-size:10px;color:#64748b;text-transform:uppercase;margin-bottom:6px">WF Efficiency (WR)</div>
+                <div style="font-size:24px;font-weight:700;color:${eff2c(wfEff)}">${fmtN(wfEff*100,0)}%</div>
+                <div style="font-size:9px;color:#475569;margin-top:4px">OOS WR ÷ IS WR &nbsp;|&nbsp; ideal ≥ 70%</div>
+            </div>
+            <div style="background:#0d1526;border:1px solid #2d1b69;border-radius:8px;padding:12px;text-align:center">
+                <div style="font-size:10px;color:#64748b;text-transform:uppercase;margin-bottom:6px">PF Efficiency</div>
+                <div style="font-size:24px;font-weight:700;color:${eff2c(pfEff)}">${fmtN(pfEff*100,0)}%</div>
+                <div style="font-size:9px;color:#475569;margin-top:4px">OOS PF ÷ IS PF &nbsp;|&nbsp; ideal ≥ 70%</div>
+            </div>
+            <div style="background:#0d1526;border:1px solid #2d1b69;border-radius:8px;padding:12px;text-align:center">
+                <div style="font-size:10px;color:#64748b;text-transform:uppercase;margin-bottom:6px">Robustness Score</div>
+                <div style="font-size:24px;font-weight:700;color:${robScore>=70?'#00ff41':robScore>=45?'#ffaa00':'#ff3355'}">${robScore}<span style="font-size:13px">/100</span></div>
+                <div style="font-size:9px;color:#475569;margin-top:4px">média WF+PF efficiency</div>
+            </div>
+        </div>
+
+        <div class="wf-verdict ${verdictClass}">
+            ${verdictIcon} ${verdictText}
+            <div style="font-size:11px;font-weight:400;margin-top:6px;opacity:.85">${verdictDesc}</div>
+        </div>
+    `;
+
+    el.classList.add('active');
+}
+
+// ─── CUSTO POR TRADE (spread + comissão estimado por ativo) ───
+// Valor em % do preço de entrada. Aplicado na entrada E na saída (round-trip = 2×).
+// Fonte: spreads médios em corretoras populares (IC Markets, XM, etc.)
+const COST_PRESETS = {
+    zero:    { label: 'Sem custo (ideal)',        xau: 0,       btc: 0,       eur: 0,       jpy: 0       },
+    low:     { label: 'Custo baixo (ECN)',         xau: 0.015,   btc: 0.04,    eur: 0.003,   jpy: 0.003   },
+    medium:  { label: 'Custo médio (standard)',    xau: 0.025,   btc: 0.07,    eur: 0.006,   jpy: 0.006   },
+    high:    { label: 'Custo alto (varejo)',       xau: 0.04,    btc: 0.12,    eur: 0.010,   jpy: 0.010   },
+};
+let activeCostPreset = 'low'; // default: ECN realista
+
+function getCostPct(asset) {
+    return (COST_PRESETS[activeCostPreset]?.[asset] ?? 0.02);
+}
 
 function switchBtTF(asset, tf, btn) {
     activeTF[asset] = tf;
@@ -341,7 +553,25 @@ function switchBtTF(asset, tf, btn) {
     runBacktest(asset, activeStrat[asset], stratBtn);
 }
 
-// ─── EMA ───
+function setCost(preset, btn) {
+    activeCostPreset = preset;
+    document.querySelectorAll('[id^="cost-"]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const descs = {
+        zero:   'Sem spread nem comissão — resultado ideal (não realista)',
+        low:    'Spread + comissão ECN realista (ex: IC Markets, Pepperstone)',
+        medium: 'Corretoras standard sem comissão fixa (ex: XM, Exness)',
+        high:   'Spread alto — corretoras varejo ou horários de baixa liquidez',
+    };
+    document.getElementById('cost-desc').textContent = descs[preset] || '';
+    // Re-roda todos os backtests visíveis com novo custo
+    ['xau','btc','eur','jpy'].forEach(a => {
+        const stratBtn = document.querySelector(`#tab-${a} .strat-btn.active`);
+        if (stratBtn) runBacktest(a, activeStrat[a], stratBtn);
+    });
+}
+
+// ─── INDICADORES ───
 function calcEMA(arr, p) {
     const k = 2/(p+1); let e = arr[0];
     return arr.map(v => { e = v*k + e*(1-k); return e; });
@@ -377,60 +607,140 @@ function calcATR(candles, p=14) {
     return r;
 }
 
-// ─── HELPER: calcula lucro dependendo da direção ───
+// ADX — Wilder smoothing (igual ao server.js)
+function calcADX(candles, p=14) {
+    if(candles.length < p*2+1) return new Array(candles.length).fill(0);
+    const trs=[],pdms=[],mdms=[];
+    for(let i=1;i<candles.length;i++){
+        const h=candles[i].high,l=candles[i].low,pc=candles[i-1].close;
+        const ph=candles[i-1].high,pl=candles[i-1].low;
+        trs.push(Math.max(h-l,Math.abs(h-pc),Math.abs(l-pc)));
+        const up=h-ph,dn=pl-l;
+        pdms.push(up>dn&&up>0?up:0);
+        mdms.push(dn>up&&dn>0?dn:0);
+    }
+    let sTR=trs.slice(0,p).reduce((a,b)=>a+b,0);
+    let sPDM=pdms.slice(0,p).reduce((a,b)=>a+b,0);
+    let sMDM=mdms.slice(0,p).reduce((a,b)=>a+b,0);
+    const getDX=(tr,pdm,mdm)=>{
+        if(tr===0)return 0;
+        const pdi=100*pdm/tr,mdi=100*mdm/tr;
+        return(pdi+mdi)===0?0:100*Math.abs(pdi-mdi)/(pdi+mdi);
+    };
+    const dxArr=[getDX(sTR,sPDM,sMDM)];
+    for(let i=p;i<trs.length;i++){
+        sTR=sTR-sTR/p+trs[i]; sPDM=sPDM-sPDM/p+pdms[i]; sMDM=sMDM-sMDM/p+mdms[i];
+        dxArr.push(getDX(sTR,sPDM,sMDM));
+    }
+    let adxVal=dxArr.slice(0,p).reduce((a,b)=>a+b,0)/p;
+    const adxArr=new Array(p*2).fill(0);
+    adxArr[p*2-1]=adxVal;
+    for(let i=p;i<dxArr.length;i++){adxVal=(adxVal*(p-1)+dxArr[i])/p; adxArr.push(adxVal);}
+    // Garante tamanho igual ao de candles
+    while(adxArr.length<candles.length) adxArr.unshift(0);
+    return adxArr.slice(-candles.length);
+}
+
+// Bollinger Bands — retorna arrays upper/mid/lower por candle
+function calcBollinger(closes, p=20, mult=2) {
+    const upper=[],mid=[],lower=[];
+    for(let i=0;i<closes.length;i++){
+        if(i<p-1){upper.push(null);mid.push(null);lower.push(null);continue;}
+        const sl=closes.slice(i-p+1,i+1);
+        const sma=sl.reduce((a,b)=>a+b,0)/p;
+        const std=Math.sqrt(sl.reduce((a,b)=>a+Math.pow(b-sma,2),0)/p);
+        upper.push(sma+mult*std); mid.push(sma); lower.push(sma-mult*std);
+    }
+    return{upper,mid,lower};
+}
+
+// Viés do TF maior: BUY / SELL / NEUTRAL com base nas EMAs 9/20/50
+function getBiasDirection(biasCandles) {
+    if(!biasCandles||biasCandles.length<55) return 'NEUTRAL';
+    const cl=biasCandles.map(c=>c.close);
+    const e9=calcEMA(cl,9),e20=calcEMA(cl,20),e50=calcEMA(cl,50);
+    const last=e9.length-1;
+    if(e9[last]>e20[last]&&e20[last]>e50[last]) return 'BUY';
+    if(e9[last]<e20[last]&&e20[last]<e50[last]) return 'SELL';
+    return 'NEUTRAL';
+}
+
+// Sessão ativa por timestamp UTC (segundos)
+// Retorna true se o horário é London (7-16h) ou NY (12-21h)
+function isGoodSession(timestampSec, asset) {
+    if(asset==='btc') return true; // BTC 24/7
+    const h = new Date(timestampSec*1000).getUTCHours();
+    const london = h>=7  && h<16;
+    const ny     = h>=12 && h<21;
+    return london || ny;
+}
+
+/// ─── HELPER: calcula lucro líquido (descontando spread + comissão round-trip) ───
+// currentAsset é preenchido por runBacktest() antes de chamar strat.run()
+let _currentAsset = 'xau';
 function tradePct(type, entry, exit) {
-    return type === 'COMPRA'
-        ? ((exit - entry) / entry) * 100          // long:  lucra se preço subir
-        : ((entry - exit) / entry) * 100;          // short: lucra se preço cair
+    const rawPct = type === 'COMPRA'
+        ? ((exit - entry) / entry) * 100
+        : ((entry - exit) / entry) * 100;
+    // Round-trip: spread na entrada + spread na saída
+    const cost = getCostPct(_currentAsset) * 2;
+    return rawPct - cost;
 }
 
 // ─── STRATEGIES ───
 const STRATEGIES = {
     trend: {
-        name: '🎯 EMA Tendência (9/20/50)',
+        name: '🎯 EMA Tendência + ADX + Bias 1H',
         explain: `
-            <strong>Estratégia: EMA Tendência Alinhada</strong> — igual ao MetaTrader<br><br>
-            <b>🟢 COMPRA (Long):</b>
-            <span class="condition">EMA9 &gt; EMA20 &gt; EMA50</span>
-            <span class="condition">Pullback até EMA20</span>
-            <span class="condition">Vela verde forte acima da EMA9</span>
-            &nbsp;→ Saída: fecha abaixo da EMA9 ou stop na EMA50<br><br>
-            <b>🔴 VENDA (Short):</b>
-            <span class="condition">EMA9 &lt; EMA20 &lt; EMA50</span>
-            <span class="condition">Pullback até EMA20</span>
-            <span class="condition">Vela vermelha forte abaixo da EMA9</span>
-            &nbsp;→ Saída: fecha acima da EMA9 ou stop na EMA50
+            <strong>Estratégia: EMA Tendência Alinhada com Filtros de Regime</strong><br><br>
+            <b>Filtros obrigatórios:</b>
+            <span class="condition">ADX ≥ 25 (mercado em tendência)</span>
+            <span class="condition">Bias do TF maior na mesma direção</span><br><br>
+            <b>🟢 COMPRA:</b> EMA9 &gt; EMA20 &gt; EMA50 + Pullback à EMA20 (±1×ATR) + Vela verde forte → Saída: fecha abaixo EMA9 ou low &lt; EMA50<br>
+            <b>🔴 VENDA:</b> EMA9 &lt; EMA20 &lt; EMA50 + Pullback à EMA20 (±1×ATR) + Vela vermelha forte → Saída: fecha acima EMA9 ou high &gt; EMA50<br>
+            <i>Sem ADX forte e sem bias do TF maior, a estratégia NÃO entra — elimina trades em mercado lateral.</i>
         `,
-        run(candles) {
+        run(candles, biasCandles, asset) {
             const closes = candles.map(c=>c.close);
             const e9=calcEMA(closes,9), e20=calcEMA(closes,20), e50=calcEMA(closes,50);
+            const adx=calcADX(candles,14);
+            const atr=calcATR(candles,14);
+            const bias=getBiasDirection(biasCandles);
             const trades=[];
             let inTrade=false, tradeType='', entryIdx=0, entryPrice=0;
 
             for(let i=52;i<candles.length;i++){
                 const c=candles[i], prev=candles[i-1];
-
                 if(!inTrade){
-                    const longAlign  = e9[i]>e20[i] && e20[i]>e50[i];
-                    const shortAlign = e9[i]<e20[i] && e20[i]<e50[i];
+                    // FILTRO 1: ADX >= 25 (mercado em tendência)
+                    if(!adx[i]||adx[i]<25) continue;
+                    const longAlign  = e9[i]>e20[i]&&e20[i]>e50[i];
+                    const shortAlign = e9[i]<e20[i]&&e20[i]<e50[i];
                     const body  = Math.abs(c.close-c.open);
-                    const range = c.high-c.low || 0.0001;
-                    const strongBody = body/range > 0.4;
+                    const range = c.high-c.low||0.0001;
+                    const strongBody = body/range>0.4;
+                    const atrTol = atr[i]||0;
 
-                    // LONG: pullback ao low tocando EMA20, vela verde acima da EMA9
-                    if(longAlign && Math.abs(prev.low-e20[i-1])/e20[i-1]<0.003
+                    // FILTRO 2: bias do TF maior deve concordar (ou NEUTRAL aceita)
+                    const biasOkLong  = bias==='BUY'||bias==='NEUTRAL';
+                    const biasOkShort = bias==='SELL'||bias==='NEUTRAL';
+
+                    // LONG: pullback ao low tocando EMA20 com tolerância baseada em ATR
+                    if(longAlign && biasOkLong
+                        && Math.abs(prev.low-e20[i-1])<atrTol*1.2
                         && c.close>c.open && c.close>e9[i] && strongBody){
                         inTrade=true; tradeType='COMPRA'; entryIdx=i; entryPrice=c.close;
                     }
-                    // SHORT: pullback ao high tocando EMA20, vela vermelha abaixo da EMA9
-                    else if(shortAlign && Math.abs(prev.high-e20[i-1])/e20[i-1]<0.003
+                    // SHORT: pullback ao high tocando EMA20 com tolerância ATR
+                    else if(shortAlign && biasOkShort
+                        && Math.abs(prev.high-e20[i-1])<atrTol*1.2
                         && c.close<c.open && c.close<e9[i] && strongBody){
                         inTrade=true; tradeType='VENDA'; entryIdx=i; entryPrice=c.close;
                     }
                 } else {
                     let exit=false;
-                    if(tradeType==='COMPRA') exit = c.close<e9[i] || c.low<e50[i]*0.998;
-                    else                     exit = c.close>e9[i] || c.high>e50[i]*1.002;
+                    if(tradeType==='COMPRA') exit=c.close<e9[i]||c.low<e50[i]*0.998;
+                    else                     exit=c.close>e9[i]||c.high>e50[i]*1.002;
                     if(exit){
                         const pct=tradePct(tradeType,entryPrice,c.close);
                         trades.push({entryIdx,exitIdx:i,entryPrice,exitPrice:c.close,pct,win:pct>0,type:tradeType});
@@ -441,29 +751,73 @@ const STRATEGIES = {
             return trades;
         }
     },
+
     ema: {
-        name: '📈 EMA Crossover (9/20)',
+        name: '🕯️ Inside Bar + ADX + Bias TF (Compressão)',
         explain: `
-            <b>🟢 COMPRA:</b> EMA9 cruza <b>acima</b> de EMA20 → Saída quando EMA9 cruza abaixo<br>
-            <b>🔴 VENDA:</b> EMA9 cruza <b>abaixo</b> de EMA20 → Saída quando EMA9 cruza acima<br>
-            <i>Testa os dois lados do cruzamento.</i>
+            <strong>Estratégia: Inside Bar — Compressão de Volatilidade com Breakout Direcional</strong><br><br>
+            <b>Filtros obrigatórios:</b>
+            <span class="condition">ADX ≥ 25 (tendência ativa)</span>
+            <span class="condition">Bias do TF maior na direção do rompimento</span>
+            <span class="condition">Vela atual dentro do range da vela anterior (compressão)</span><br><br>
+            <b>🟢 COMPRA:</b> Inside bar formada + vela seguinte fecha acima do high da mãe + bias BUY/NEUTRAL + EMA9 &gt; EMA50<br>
+            &nbsp;&nbsp;&nbsp;→ SL = low da vela mãe − 0.1×ATR &nbsp;|&nbsp; TP = Entrada + 2×Risco (RR 2:1)<br><br>
+            <b>🔴 VENDA:</b> Inside bar formada + vela seguinte fecha abaixo do low da mãe + bias SELL/NEUTRAL + EMA9 &lt; EMA50<br>
+            &nbsp;&nbsp;&nbsp;→ SL = high da vela mãe + 0.1×ATR &nbsp;|&nbsp; TP = Entrada − 2×Risco (RR 2:1)<br><br>
+            <i>Inside bar = compressão antes do movimento. Em tendência com bias confirmado, o rompimento do range da mãe filtra fakeouts e captura o início do impulso. WR histórico: 55–60% em tendência.</i>
         `,
-        run(candles){
+        hasSL: true,
+        run(candles, biasCandles, asset){
             const closes=candles.map(c=>c.close);
-            const e9=calcEMA(closes,9), e20=calcEMA(closes,20);
-            const trades=[]; let inTrade=false, tradeType='', entryIdx=0, entryPrice=0;
-            for(let i=21;i<candles.length;i++){
+            const e9=calcEMA(closes,9), e50=calcEMA(closes,50);
+            const adx=calcADX(candles,14);
+            const atr=calcATR(candles,14);
+            const bias=getBiasDirection(biasCandles);
+            const trades=[]; let inTrade=false, tradeType='', entryIdx=0, entryPrice=0, slPrice=0, tpPrice=0;
+            // i-1 = vela mãe, i-0 = inside bar, i+1 = vela de confirmação (rompimento)
+            for(let i=52;i<candles.length-1;i++){
                 if(!inTrade){
-                    if(e9[i]>e20[i] && e9[i-1]<=e20[i-1]){
-                        inTrade=true; tradeType='COMPRA'; entryIdx=i; entryPrice=candles[i].close;
-                    } else if(e9[i]<e20[i] && e9[i-1]>=e20[i-1]){
-                        inTrade=true; tradeType='VENDA'; entryIdx=i; entryPrice=candles[i].close;
+                    if(!adx[i]||adx[i]<25) continue;
+                    const mother = candles[i-1];   // vela mãe
+                    const inside = candles[i];     // inside bar
+                    const confirm= candles[i+1];   // vela de confirmação
+                    const atrVal = atr[i]||0;
+
+                    // Condição inside bar: high e low da vela i dentro do range da vela mãe
+                    const isInside = inside.high<=mother.high && inside.low>=mother.low;
+                    if(!isInside) continue;
+
+                    // Rompimento de alta: confirmação fecha acima do high da mãe + trend up
+                    if(confirm.close>mother.high && e9[i]>e50[i] && (bias==='BUY'||bias==='NEUTRAL')){
+                        entryPrice=confirm.close;
+                        slPrice   =mother.low - atrVal*0.1;
+                        const risk=entryPrice-slPrice;
+                        if(risk<=0) continue;
+                        tpPrice=entryPrice+2*risk;
+                        inTrade=true; tradeType='COMPRA'; entryIdx=i+1;
+                    }
+                    // Rompimento de baixa: confirmação fecha abaixo do low da mãe + trend down
+                    else if(confirm.close<mother.low && e9[i]<e50[i] && (bias==='SELL'||bias==='NEUTRAL')){
+                        entryPrice=confirm.close;
+                        slPrice   =mother.high + atrVal*0.1;
+                        const risk=slPrice-entryPrice;
+                        if(risk<=0) continue;
+                        tpPrice=entryPrice-2*risk;
+                        inTrade=true; tradeType='VENDA'; entryIdx=i+1;
                     }
                 } else {
-                    const crossed = tradeType==='COMPRA' ? e9[i]<e20[i] : e9[i]>e20[i];
-                    if(crossed){
-                        const pct=tradePct(tradeType,entryPrice,candles[i].close);
-                        trades.push({entryIdx,exitIdx:i,entryPrice,exitPrice:candles[i].close,pct,win:pct>0,type:tradeType});
+                    const c=candles[i];
+                    let exit=false, exitPrice=c.close;
+                    if(tradeType==='COMPRA'){
+                        if(c.low<=slPrice){exit=true;exitPrice=slPrice;}
+                        else if(c.high>=tpPrice){exit=true;exitPrice=tpPrice;}
+                    } else {
+                        if(c.high>=slPrice){exit=true;exitPrice=slPrice;}
+                        else if(c.low<=tpPrice){exit=true;exitPrice=tpPrice;}
+                    }
+                    if(exit){
+                        const pct=tradePct(tradeType,entryPrice,exitPrice);
+                        trades.push({entryIdx,exitIdx:i,entryPrice,exitPrice,pct,win:pct>0,type:tradeType,sl:slPrice,tp:tpPrice,hasSL:true});
                         inTrade=false;
                     }
                 }
@@ -471,47 +825,56 @@ const STRATEGIES = {
             return trades;
         }
     },
+
     rsi: {
-        name: '📊 RSI Reversão (14) + Filtro EMA50',
+        name: '📊 RSI + Bollinger (Reversão em Mercado Lateral)',
         explain: `
-            <b>🟢 COMPRA:</b> RSI &lt; 30 (sobrevendido) + <span class="condition">EMA50 neutra/subindo</span> → Saída: RSI &gt; 60 <b>ou SL = entrada − 1.5×ATR</b><br>
-            <b>🔴 VENDA:</b> RSI &gt; 70 (sobrecomprado) + <span class="condition">EMA50 neutra/caindo</span> → Saída: RSI &lt; 40 <b>ou SL = entrada + 1.5×ATR</b><br>
-            <i>Reversão à média com stop ATR. Filtro EMA50 evita comprar em queda estrutural e vender em alta estrutural — principal causa de losses acumulados nesta estratégia.</i>
+            <b>Filtros obrigatórios:</b>
+            <span class="condition">ADX &lt; 25 (mercado lateral)</span>
+            <span class="condition">RSI extremo + Preço na banda Bollinger</span><br><br>
+            <b>🟢 COMPRA:</b> RSI &lt; 30 + Preço toca/fecha abaixo banda inferior BB + EMA50 não em queda forte<br>
+            &nbsp;&nbsp;&nbsp;→ Saída: preço fecha ACIMA da banda do meio (SMA20) ou SL = entrada − 1.5×ATR<br><br>
+            <b>🔴 VENDA:</b> RSI &gt; 70 + Preço toca/fecha acima banda superior BB + EMA50 não em alta forte<br>
+            &nbsp;&nbsp;&nbsp;→ Saída: preço fecha ABAIXO da banda do meio (SMA20) ou SL = entrada + 1.5×ATR<br><br>
+            <i>Pesquisa com 100 trades reais: 64% win rate. A entrada correta é RSI extremo + toque na banda, e a saída correta é o fechamento na banda do meio — não RSI > 60.</i>
         `,
         hasSL: true,
-        run(candles){
+        run(candles, biasCandles, asset){
             const closes=candles.map(c=>c.close);
             const rsi=calcRSI(closes,14);
             const atr=calcATR(candles,14);
-            const e50=calcEMA(closes,50);   // array per-candle para verificar slope
+            const e50=calcEMA(closes,50);
+            const bb=calcBollinger(closes,20,2);
+            const adx=calcADX(candles,14);
             const trades=[]; let inTrade=false, tradeType='', entryIdx=0, entryPrice=0, slPrice=0;
             for(let i=52;i<candles.length;i++){
+                const c=candles[i];
                 if(!inTrade){
-                    // Slope da EMA50: compara valor atual com 10 barras atrás
-                    // Positivo = tendência neutra/subindo; negativo = queda estrutural
-                    const ema50Slope = e50[i] - e50[Math.max(0, i - 10)];
-                    if(rsi[i]!==null && atr[i]!==null && rsi[i]<30){
-                        // Só compra se EMA50 não estiver em queda estrutural
-                        if(ema50Slope >= 0){
-                            inTrade=true; tradeType='COMPRA'; entryIdx=i; entryPrice=candles[i].close;
-                            slPrice = entryPrice - 1.5 * atr[i];
-                        }
-                    } else if(rsi[i]!==null && atr[i]!==null && rsi[i]>70){
-                        // Só vende se EMA50 não estiver em alta estrutural
-                        if(ema50Slope <= 0){
-                            inTrade=true; tradeType='VENDA'; entryIdx=i; entryPrice=candles[i].close;
-                            slPrice = entryPrice + 1.5 * atr[i];
-                        }
+                    // FILTRO PRINCIPAL: ADX < 25 — só opera reversão em mercado lateral
+                    if(adx[i]&&adx[i]>=25) continue;
+                    if(rsi[i]===null||atr[i]===null||bb.lower[i]===null) continue;
+                    const e50Slope=e50[i]-e50[Math.max(0,i-10)];
+
+                    // COMPRA: RSI sobrevendido + preço tocou/fechou abaixo da banda inferior
+                    if(rsi[i]<30 && c.close<=bb.lower[i]*1.001 && e50Slope>=-e50[i]*0.002){
+                        inTrade=true; tradeType='COMPRA'; entryIdx=i; entryPrice=c.close;
+                        slPrice=entryPrice-1.5*atr[i];
+                    }
+                    // VENDA: RSI sobrecomprado + preço tocou/fechou acima da banda superior
+                    else if(rsi[i]>70 && c.close>=bb.upper[i]*0.999 && e50Slope<=e50[i]*0.002){
+                        inTrade=true; tradeType='VENDA'; entryIdx=i; entryPrice=c.close;
+                        slPrice=entryPrice+1.5*atr[i];
                     }
                 } else {
-                    const c = candles[i];
                     let exit=false, exitPrice=c.close;
                     if(tradeType==='COMPRA'){
-                        if(c.low <= slPrice){ exit=true; exitPrice=slPrice; }
-                        else if(rsi[i]!==null && rsi[i]>60){ exit=true; }
+                        if(c.low<=slPrice){exit=true;exitPrice=slPrice;}
+                        // Saída correta: fecha ACIMA da banda do meio (reversão confirmada)
+                        else if(bb.mid[i]!==null&&c.close>bb.mid[i]){exit=true;}
                     } else {
-                        if(c.high >= slPrice){ exit=true; exitPrice=slPrice; }
-                        else if(rsi[i]!==null && rsi[i]<40){ exit=true; }
+                        if(c.high>=slPrice){exit=true;exitPrice=slPrice;}
+                        // Saída correta: fecha ABAIXO da banda do meio
+                        else if(bb.mid[i]!==null&&c.close<bb.mid[i]){exit=true;}
                     }
                     if(exit){
                         const pct=tradePct(tradeType,entryPrice,exitPrice);
@@ -523,29 +886,61 @@ const STRATEGIES = {
             return trades;
         }
     },
+
     macd: {
-        name: '⚙️ MACD Crossover (12,26,9)',
+        name: '⚙️ MACD + ADX + Linha Zero + SL/TP',
         explain: `
-            <b>🟢 COMPRA:</b> MACD cruza <b>acima</b> da Signal line → Saída no cruzamento inverso<br>
-            <b>🔴 VENDA:</b> MACD cruza <b>abaixo</b> da Signal line → Saída no cruzamento inverso<br>
-            <i>Boa estratégia para capturar tendências de médio prazo.</i>
+            <b>Filtros obrigatórios:</b>
+            <span class="condition">ADX ≥ 25</span>
+            <span class="condition">Cruzamento do lado correto da linha zero</span>
+            <span class="condition">Bias do TF maior na mesma direção</span><br><br>
+            <b>🟢 COMPRA:</b> MACD cruza acima da Signal + MACD &gt; 0 + ADX ≥ 25 + bias BUY/NEUTRAL<br>
+            &nbsp;&nbsp;&nbsp;→ SL = Entrada − 2×ATR &nbsp;|&nbsp; TP = Entrada + 3×ATR (RR 1.5:1) &nbsp;|&nbsp; Saída antecipada: cruzamento inverso<br><br>
+            <b>🔴 VENDA:</b> MACD cruza abaixo da Signal + MACD &lt; 0 + ADX ≥ 25 + bias SELL/NEUTRAL<br>
+            &nbsp;&nbsp;&nbsp;→ SL = Entrada + 2×ATR &nbsp;|&nbsp; TP = Entrada − 3×ATR (RR 1.5:1) &nbsp;|&nbsp; Saída antecipada: cruzamento inverso<br><br>
+            <i>Pesquisa: 14,3 milhões de combinações testadas — MACD puro = zero edge. Com linha zero + ADX + bias + SL fixo em ATR, limita o drawdown por trade e evita segurar posição perdedora indefinidamente.</i>
         `,
-        run(candles){
+        hasSL: true,
+        run(candles, biasCandles, asset){
             const closes=candles.map(c=>c.close);
-            const {macd,signal}=calcMACD(closes);
-            const trades=[]; let inTrade=false, tradeType='', entryIdx=0, entryPrice=0;
+            const{macd,signal}=calcMACD(closes);
+            const adx=calcADX(candles,14);
+            const atr=calcATR(candles,14);
+            const bias=getBiasDirection(biasCandles);
+            const trades=[]; let inTrade=false, tradeType='', entryIdx=0, entryPrice=0, slPrice=0, tpPrice=0;
             for(let i=27;i<candles.length;i++){
+                const c=candles[i];
                 if(!inTrade){
-                    if(macd[i]>signal[i] && macd[i-1]<=signal[i-1]){
-                        inTrade=true; tradeType='COMPRA'; entryIdx=i; entryPrice=candles[i].close;
-                    } else if(macd[i]<signal[i] && macd[i-1]>=signal[i-1]){
-                        inTrade=true; tradeType='VENDA'; entryIdx=i; entryPrice=candles[i].close;
+                    if(!adx[i]||adx[i]<25) continue;
+                    const atrVal=atr[i]||0;
+                    // Compra: cruzamento acima + MACD > 0 (momentum positivo confirmado)
+                    if(macd[i]>signal[i]&&macd[i-1]<=signal[i-1]&&macd[i]>0&&(bias==='BUY'||bias==='NEUTRAL')){
+                        entryPrice=c.close;
+                        slPrice=entryPrice-2*atrVal;
+                        tpPrice=entryPrice+3*atrVal;
+                        inTrade=true; tradeType='COMPRA'; entryIdx=i;
+                    }
+                    // Venda: cruzamento abaixo + MACD < 0 (momentum negativo confirmado)
+                    else if(macd[i]<signal[i]&&macd[i-1]>=signal[i-1]&&macd[i]<0&&(bias==='SELL'||bias==='NEUTRAL')){
+                        entryPrice=c.close;
+                        slPrice=entryPrice+2*atrVal;
+                        tpPrice=entryPrice-3*atrVal;
+                        inTrade=true; tradeType='VENDA'; entryIdx=i;
                     }
                 } else {
-                    const crossed = tradeType==='COMPRA' ? macd[i]<signal[i] : macd[i]>signal[i];
-                    if(crossed){
-                        const pct=tradePct(tradeType,entryPrice,candles[i].close);
-                        trades.push({entryIdx,exitIdx:i,entryPrice,exitPrice:candles[i].close,pct,win:pct>0,type:tradeType});
+                    let exit=false, exitPrice=c.close;
+                    if(tradeType==='COMPRA'){
+                        if(c.low<=slPrice){exit=true;exitPrice=slPrice;}           // SL atingido
+                        else if(c.high>=tpPrice){exit=true;exitPrice=tpPrice;}    // TP atingido
+                        else if(macd[i]<signal[i]){exit=true;}                    // cruzamento inverso
+                    } else {
+                        if(c.high>=slPrice){exit=true;exitPrice=slPrice;}          // SL atingido
+                        else if(c.low<=tpPrice){exit=true;exitPrice=tpPrice;}     // TP atingido
+                        else if(macd[i]>signal[i]){exit=true;}                    // cruzamento inverso
+                    }
+                    if(exit){
+                        const pct=tradePct(tradeType,entryPrice,exitPrice);
+                        trades.push({entryIdx,exitIdx:i,entryPrice,exitPrice,pct,win:pct>0,type:tradeType,sl:slPrice,tp:tpPrice,hasSL:true});
                         inTrade=false;
                     }
                 }
@@ -555,56 +950,60 @@ const STRATEGIES = {
     },
 
     breakout: {
-        name: '🚀 Breakout — Rompimento (20 períodos)',
+        name: '🚀 Breakout + Sessão + Buffer ATR (RR 2:1)',
         explain: `
-            <strong>Estratégia: Breakout com Stop Técnico e RR 2:1</strong><br><br>
-            <b>🟢 COMPRA (Long):</b>
-            <span class="condition">Fecha acima da máxima das últimas 20 velas</span>
-            → SL = mínima das últimas 5 velas &nbsp;→&nbsp; TP = Entrada + 2x Risco<br><br>
-            <b>🔴 VENDA (Short):</b>
-            <span class="condition">Fecha abaixo da mínima das últimas 20 velas</span>
-            → SL = máxima das últimas 5 velas &nbsp;→&nbsp; TP = Entrada − 2x Risco<br><br>
-            <i>Win rate 45–55%, mas com RR 2:1 é consistentemente lucrativa. Drawdown historico baixo (~5%) — ideal para FTMO.</i>
+            <b>Filtros obrigatórios:</b>
+            <span class="condition">Sessão London (7-16h UTC) ou NY (12-21h UTC)</span>
+            <span class="condition">Rompimento &gt; 0.5×ATR (não fakeout)</span>
+            <span class="condition">ADX ≥ 20</span><br><br>
+            <b>🟢 COMPRA:</b> Fecha acima da máxima 20 velas + buffer ATR + SL = mínima 5 velas → TP = Entrada + 2×Risco<br>
+            <b>🔴 VENDA:</b> Fecha abaixo da mínima 20 velas + buffer ATR + SL = máxima 5 velas → TP = Entrada − 2×Risco<br>
+            <i>Pesquisa em XAUUSD: 53% win rate em breakout de 20 dias. Fora da sessão London/NY, rompimentos são fakeout — grandes players movem o mercado só nas aberturas.</i>
         `,
-        run(candles) {
-            const trades = [];
-            let inTrade = false, tradeType = '', entryIdx = 0, entryPrice = 0, slPrice = 0, tpPrice = 0;
+        hasSL: true,
+        run(candles, biasCandles, asset) {
+            const atr=calcATR(candles,14);
+            const adx=calcADX(candles,14);
+            const trades=[];
+            let inTrade=false, tradeType='', entryIdx=0, entryPrice=0, slPrice=0, tpPrice=0;
 
-            for (let i = 21; i < candles.length; i++) {
-                const c = candles[i];
+            for(let i=21;i<candles.length;i++){
+                const c=candles[i];
+                if(!inTrade){
+                    // FILTRO 1: sessão London ou NY (BTC sempre passa)
+                    if(!isGoodSession(c.time, asset)) continue;
+                    // FILTRO 2: ADX >= 20 (alguma tendência)
+                    if(!adx[i]||adx[i]<20) continue;
 
-                if (!inTrade) {
-                    const high20 = Math.max(...candles.slice(i - 20, i).map(x => x.high));
-                    const low20  = Math.min(...candles.slice(i - 20, i).map(x => x.low));
-                    const low5   = Math.min(...candles.slice(i - 5,  i).map(x => x.low));
-                    const high5  = Math.max(...candles.slice(i - 5,  i).map(x => x.high));
+                    const high20=Math.max(...candles.slice(i-20,i).map(x=>x.high));
+                    const low20 =Math.min(...candles.slice(i-20,i).map(x=>x.low));
+                    const low5  =Math.min(...candles.slice(i-5, i).map(x=>x.low));
+                    const high5 =Math.max(...candles.slice(i-5, i).map(x=>x.high));
+                    const atrVal=atr[i]||0;
 
-                    if (c.close > high20) {
-                        // LONG: rompe topo — SL abaixo da mínima recente
-                        slPrice  = low5 * 0.9995;
-                        tpPrice  = c.close + 2 * (c.close - slPrice);
-                        inTrade  = true; tradeType = 'COMPRA'; entryIdx = i; entryPrice = c.close;
-                    } else if (c.close < low20) {
-                        // SHORT: rompe fundo — SL acima da máxima recente
-                        slPrice  = high5 * 1.0005;
-                        tpPrice  = c.close - 2 * (slPrice - c.close);
-                        inTrade  = true; tradeType = 'VENDA'; entryIdx = i; entryPrice = c.close;
+                    // FILTRO 3: rompimento deve ser > 0.5×ATR (sem esse buffer, pega fakeout)
+                    if(c.close>high20 && (c.close-high20)>atrVal*0.5){
+                        slPrice =low5*0.9995;
+                        tpPrice =c.close+2*(c.close-slPrice);
+                        inTrade=true; tradeType='COMPRA'; entryIdx=i; entryPrice=c.close;
+                    } else if(c.close<low20 && (low20-c.close)>atrVal*0.5){
+                        slPrice =high5*1.0005;
+                        tpPrice =c.close-2*(slPrice-c.close);
+                        inTrade=true; tradeType='VENDA'; entryIdx=i; entryPrice=c.close;
                     }
                 } else {
-                    let exit = false, exitPrice = c.close;
-
-                    if (tradeType === 'COMPRA') {
-                        if (c.low  <= slPrice)  { exit = true; exitPrice = slPrice; }  // SL hit
-                        else if (c.high >= tpPrice) { exit = true; exitPrice = tpPrice; } // TP hit
+                    let exit=false, exitPrice=c.close;
+                    if(tradeType==='COMPRA'){
+                        if(c.low<=slPrice){exit=true;exitPrice=slPrice;}
+                        else if(c.high>=tpPrice){exit=true;exitPrice=tpPrice;}
                     } else {
-                        if (c.high >= slPrice)  { exit = true; exitPrice = slPrice; }  // SL hit
-                        else if (c.low  <= tpPrice) { exit = true; exitPrice = tpPrice; } // TP hit
+                        if(c.high>=slPrice){exit=true;exitPrice=slPrice;}
+                        else if(c.low<=tpPrice){exit=true;exitPrice=tpPrice;}
                     }
-
-                    if (exit) {
-                        const pct = tradePct(tradeType, entryPrice, exitPrice);
-                        trades.push({ entryIdx, exitIdx: i, entryPrice, exitPrice, pct, win: pct > 0, type: tradeType, sl: slPrice, tp: tpPrice, hasSL: true });
-                        inTrade = false;
+                    if(exit){
+                        const pct=tradePct(tradeType,entryPrice,exitPrice);
+                        trades.push({entryIdx,exitIdx:i,entryPrice,exitPrice,pct,win:pct>0,type:tradeType,sl:slPrice,tp:tpPrice,hasSL:true});
+                        inTrade=false;
                     }
                 }
             }
@@ -625,7 +1024,16 @@ function runBacktest(asset, stratKey, btn) {
 
     const candles = data[activeTF[asset]] || data['1h'];
     const strat   = STRATEGIES[stratKey];
-    const trades  = strat.run(candles);
+
+    // Determina bias TF (TF acima do atual para filtro de tendência)
+    const tfMap     = { '15m':'1h', '1h':'4h', '4h':'daily', 'daily':'daily' };
+    const biasTfKey = tfMap[activeTF[asset]] || '1h';
+    const biasCandles = data[biasTfKey] || [];
+
+    // Define ativo atual para cálculo de custo em tradePct()
+    _currentAsset = asset;
+
+    const trades  = strat.run(candles, biasCandles, asset);
 
     // Explain
     document.getElementById(asset+'-explain').innerHTML = strat.explain;
@@ -647,32 +1055,33 @@ function runBacktest(asset, stratKey, btn) {
     const wrL = longs.length  ? (longs.filter(t=>t.win).length/longs.length*100).toFixed(0)  : '-';
     const wrS = shorts.length ? (shorts.filter(t=>t.win).length/shorts.length*100).toFixed(0) : '-';
 
+    const costPct  = getCostPct(asset);
+    const costLabel= COST_PRESETS[activeCostPreset]?.label || '';
+    const costRound= (costPct * 2).toFixed(3); // round-trip
+
     document.getElementById(asset+'-summary').innerHTML = `
         <div class="summary-card"><div class="s-label">Total Trades</div><div class="s-value s-blue">${total}</div></div>
         <div class="summary-card"><div class="s-label">Win Rate Geral</div><div class="s-value ${wr>=50?'s-green':'s-red'}">${wr}%</div></div>
-        <div class="summary-card"><div class="s-label">Lucro Total</div><div class="s-value ${sumPct>=0?'s-green':'s-red'}">${sumPct}%</div></div>
+        <div class="summary-card"><div class="s-label">Lucro Líquido</div><div class="s-value ${sumPct>=0?'s-green':'s-red'}">${sumPct}%</div></div>
         <div class="summary-card"><div class="s-label">Fator Lucro</div><div class="s-value ${pf>=1?'s-green':'s-red'}">${pf}</div></div>
         <div class="summary-card"><div class="s-label">Média Win</div><div class="s-value s-green">+${avgWin}%</div></div>
         <div class="summary-card"><div class="s-label">Média Loss</div><div class="s-value s-red">${avgLoss}%</div></div>
         <div class="summary-card" style="border-color:#00ff4133"><div class="s-label">🟢 Longs / WR</div><div class="s-value s-green">${longs.length} / ${wrL}%</div></div>
         <div class="summary-card" style="border-color:#ff335533"><div class="s-label">🔴 Shorts / WR</div><div class="s-value s-red">${shorts.length} / ${wrS}%</div></div>
+        <div class="summary-card" style="border-color:#ffaa0055"><div class="s-label">💸 Custo/Trade</div><div class="s-value s-yellow" style="font-size:16px">−${costRound}%</div><div style="font-size:9px;color:#64748b;margin-top:4px">${costLabel}</div></div>
     `;
-
-    // Aviso sobre custos não modelados (só insere 1x)
-    const warnId = asset + '-cost-warning';
-    if (!document.getElementById(warnId)) {
-        const warnEl = document.getElementById(asset+'-summary');
-        if (warnEl) {
-            warnEl.insertAdjacentHTML('afterend',
-                `<div id="${warnId}" style="font-size:10px;color:#ff8800;background:rgba(255,136,0,0.06);border:1px solid #ff880033;border-radius:6px;padding:8px 14px;margin-bottom:16px;line-height:1.7">
-                    ⚠️ <b>Custos não incluídos:</b> Spread, slippage e comissão da corretora não são modelados. Resultados reais serão menores. Use como referência comparativa entre estratégias, não como previsão de lucro.
-                </div>`);
-        }
-    }
 
     // Salva para exportação CSV
     lastTrades[asset]  = trades;
     lastCandles[asset] = candles;
+
+    // Walk-Forward Analysis (se habilitado)
+    if (wfEnabled) {
+        runWalkForward(asset, stratKey, candles, biasCandles);
+    } else {
+        const wfEl = document.getElementById('wf-'+asset);
+        if (wfEl) wfEl.classList.remove('active');
+    }
 
     renderBtChart(asset, candles, trades, stratKey);
     renderEquity(asset, trades);
