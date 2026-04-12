@@ -1780,4 +1780,8 @@ app.listen(PORT, async () => {
     console.log('ℹ️  OANDA_API_KEY não configurada — XAU/EUR/JPY usará Twelve Data (15min)');
     console.log('   Para ativar: adicione OANDA_API_KEY=seu_token no .env\n');
     console.log('📥 Carregando ativos via Twelve Data...\n');
-    for (const
+    for (const key of Object.keys(ASSETS).filter(k => k !== 'btc')) {
+      getAsset(key).catch(e => console.log(`⚠️  ${key}: ${e.message}`));
+    }
+  }
+});
