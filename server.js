@@ -1,9 +1,10 @@
 require('dotenv').config();
-const express = require('express');
-const cors    = require('cors');
-const axios   = require('axios');
-const fs      = require('fs');
-const path    = require('path');
+const express   = require('express');
+const cors      = require('cors');
+const axios     = require('axios');
+const fs        = require('fs');
+const path      = require('path');
+const WebSocket = require('ws');
 
 const app = express();
 
@@ -47,12 +48,25 @@ app.use(express.static('.', {
   dotfiles: 'deny',
 }));
 
-const VERSION          = '5.0.0';
+const VERSION          = '6.0.0';
 const PORT             = process.env.PORT || 3000;
 const TWELVE_DATA_KEY  = process.env.TWELVE_DATA_KEY  || 'COLE_SUA_CHAVE_AQUI';
 const TELEGRAM_TOKEN   = process.env.TELEGRAM_TOKEN   || '';
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
-const CACHE_TTL_MS     = 15 * 60 * 1000;   // 15 minutos
+const CACHE_TTL_MS     = 15 * 60 * 1000;   // 15 minutos (fallback Twelve Data)
+
+// ── OANDA (tempo real para XAU, EUR, JPY) ───────────────────────────────────
+// OANDA_API_KEY: gere em https://www.oanda.com → My Account → API Access
+// OANDA_PRACTICE: 'true' = conta demo (padrão) | 'false' = conta real
+const OANDA_API_KEY   = process.env.OANDA_API_KEY  || '';
+const OANDA_PRACTICE  = process.env.OANDA_PRACTICE !== 'false'; // padrão: demo
+const OANDA_BASE      = OANDA_PRACTICE
+  ? 'https://api-fxpractice.oanda.com'
+  : 'https://api-fxtrade.oanda.com';
+const OANDA_POLL_MS   = 2 * 60 * 1000;   // polling a cada 2 minutos
+
+// Mapa ativo → instrumento OANDA (chaves devem bater com ASSETS)
+const OANDA_INSTRUMENT = { xauusd: 'XAU_USD', eurusd: 'EUR_USD', usdjpy: 'USD_JPY' };
 
 // ===== TELEGRAM ALERTS =====
 const ALERT_COOLDOWN_MS  = 60 * 60 * 1000; // 1 hora entre alertas do mesmo ativo
@@ -899,6 +913,120 @@ function agregateCandles(candles, periodSeconds) {
     .slice(-200);
 }
 
+// ===== KRAKEN REST POLLING — BTC TEMPO REAL (substitui Binance bloqueado nos EUA) =====
+// Kraken API pública: sem autenticação, sem bloqueio geográfico, candles de 15min gratuitos
+// Docs: https://docs.kraken.com/api/docs/rest/get-ohlc-data
+const btcWsConnected = false; // mantido para compatibilidade com /api/health
+
+async function fetchBtcFromKraken() {
+  const res = await axios.get('https://api.kraken.com/0/public/OHLC', {
+    params: { pair: 'XBTUSD', interval: 15 }, // interval em minutos
+    timeout: 12000,
+  });
+  if (res.data.error?.length) throw new Error('Kraken: ' + res.data.error.join(', '));
+
+  // Kraken retorna { result: { XXBTZUSD: [[time,open,high,low,close,vwap,volume,count], ...], last: N } }
+  const raw = res.data.result?.XXBTZUSD;
+  if (!raw?.length) throw new Error('Kraken: sem dados na resposta');
+
+  const candles15m = raw.map(k => ({
+    time:  parseInt(k[0]),
+    open:  parseFloat(k[1]),
+    high:  parseFloat(k[2]),
+    low:   parseFloat(k[3]),
+    close: parseFloat(k[4]),
+  })).slice(-500);
+
+  const now = Date.now();
+  return {
+    success:      true,
+    source:       '⚡ Kraken (2min polling)',
+    isSimulation: false,
+    isRealTime:   true,
+    price:        candles15m[candles15m.length - 1].close,
+    '15m':        candles15m,
+    '1h':         agregateCandles(candles15m, 3600),
+    '4h':         agregateCandles(candles15m, 14400),
+    'daily':      agregateCandles(candles15m, 86400),
+    asset:        'BTCUSD',
+    updatedAt:    now,
+    nextUpdateAt: now + 2 * 60 * 1000,
+  };
+}
+
+async function pollBtcKraken() {
+  try {
+    const data = await fetchBtcFromKraken();
+    cache['btc'] = { data, updatedAt: Date.now() };
+    console.log(`⚡ BTC Kraken: $${data.price.toFixed(0)}`);
+  } catch (e) {
+    console.log('⚠️  Kraken poll BTC:', e.message, '— mantendo cache anterior');
+  }
+}
+
+// Alias para compatibilidade com o boot
+async function loadBtcHistory() {
+  await pollBtcKraken();
+}
+function connectBinanceWS() {
+  // Binance bloqueado nos EUA (Railway us-west). Usando Kraken como fonte de BTC.
+  console.log('ℹ️  Binance desabilitado (bloqueio 451 EUA) — BTC via Kraken polling a cada 2min');
+}
+
+// ===== OANDA POLLING — XAU/EUR/JPY TEMPO REAL =====
+async function fetchFromOanda(assetKey) {
+  const instrument = OANDA_INSTRUMENT[assetKey];
+  if (!instrument) throw new Error(`Instrumento OANDA não mapeado para: ${assetKey}`);
+
+  const res = await axios.get(`${OANDA_BASE}/v3/instruments/${instrument}/candles`, {
+    headers: { Authorization: `Bearer ${OANDA_API_KEY}` },
+    params:  { granularity: 'M15', count: 600, price: 'M' }, // M = midpoint bid+ask
+    timeout: 12000,
+  });
+
+  if (!res.data?.candles?.length) throw new Error('OANDA: sem candles na resposta');
+
+  // Filtra só candles completos (não o candle atual ainda formando)
+  const all = res.data.candles
+    .filter(c => c.complete)
+    .map(c => ({
+      time:  Math.floor(new Date(c.time).getTime() / 1000),
+      open:  parseFloat(c.mid.o),
+      high:  parseFloat(c.mid.h),
+      low:   parseFloat(c.mid.l),
+      close: parseFloat(c.mid.c),
+    }));
+
+  if (all.length < 10) throw new Error('OANDA: dados insuficientes');
+
+  return {
+    success:      true,
+    source:       '⚡ OANDA (tempo real)',
+    isSimulation: false,
+    isRealTime:   true,
+    price:        all[all.length - 1].close,
+    '15m':        all.slice(-500),
+    '1h':         agregateCandles(all, 3600),
+    '4h':         agregateCandles(all, 14400),
+    'daily':      agregateCandles(all, 86400),
+  };
+}
+
+async function pollOanda() {
+  if (!OANDA_API_KEY) return; // sem chave configurada, não tenta
+  for (const key of ['xauusd', 'eurusd', 'usdjpy']) {
+    if (!isMarketOpen(key)) continue; // não consome rate limit fora do horário
+    try {
+      const cfg  = ASSETS[key];
+      const data = { ...await fetchFromOanda(key), asset: cfg.name, updatedAt: Date.now() };
+      cache[key] = { data, updatedAt: Date.now() };
+      console.log(`⚡ OANDA ${cfg.name}: ${data.price.toFixed(cfg.decimals)}`);
+    } catch (e) {
+      console.log(`⚠️  OANDA poll ${key}: ${e.message}`);
+    }
+  }
+}
+
 // ===== BUSCA TWELVE DATA =====
 async function fetchFromTwelveData(symbol) {
   // Busca velas de 15min — suficiente para agregar em 1h, 4h e daily
@@ -959,21 +1087,42 @@ function generateFallback(basePrice, vol, dec) {
 
 // ===== FETCH GENÉRICO COM CACHE =====
 async function getAsset(key) {
-  if (isCacheValid(key)) return cache[key].data;
-
   const cfg = ASSETS[key];
 
-  // Mercado fechado: não consome crédito da API — retorna cache ou estado fechado
+  // ── Fontes real-time têm prioridade: Binance (BTC) e OANDA (XAU/EUR/JPY) ──
+  // Se o cache foi atualizado por WebSocket/OANDA nos últimos 5 minutos, usa direto.
+  const RT_TTL = 5 * 60 * 1000;
+  if (cache[key].data?.isRealTime && cache[key].updatedAt && (Date.now() - cache[key].updatedAt) < RT_TTL) {
+    return cache[key].data;
+  }
+
+  // ── Cache normal (Twelve Data) ainda válido ──────────────────────────────
+  if (isCacheValid(key)) return cache[key].data;
+
+  // ── Mercado fechado: não consome crédito da API ──────────────────────────
   if (!isMarketOpen(key)) {
-    const payload = buildMarketClosedPayload(key);
-    // Atualiza o cache com TTL reduzido (5min) para verificar reabertura com frequência
+    const payload    = buildMarketClosedPayload(key);
     const CLOSED_TTL = 5 * 60 * 1000;
     cache[key] = { data: payload, updatedAt: Date.now() - (CACHE_TTL_MS - CLOSED_TTL) };
     console.log(`🔒 ${cfg.name}: mercado fechado — sem chamada à API`);
     return payload;
   }
 
-  console.log(`📥 Buscando ${cfg.name}...`);
+  // ── Tenta OANDA para XAU/EUR/JPY se chave configurada ───────────────────
+  if (OANDA_API_KEY && OANDA_INSTRUMENT[key]) {
+    try {
+      const now  = Date.now();
+      const data = { ...await fetchFromOanda(key), asset: cfg.name, updatedAt: now, nextUpdateAt: now + OANDA_POLL_MS };
+      cache[key] = { data, updatedAt: now };
+      console.log(`✅ ${cfg.name}: ${data.price.toFixed(cfg.decimals)} [OANDA]`);
+      return data;
+    } catch (oandaErr) {
+      console.log(`⚠️  OANDA ${key}: ${oandaErr.message} — tentando Twelve Data...`);
+    }
+  }
+
+  // ── Fallback: Twelve Data ─────────────────────────────────────────────────
+  console.log(`📥 Buscando ${cfg.name} via Twelve Data...`);
   try {
     const now  = Date.now();
     const data = { ...await fetchFromTwelveData(cfg.symbol), asset: cfg.name, updatedAt: now, nextUpdateAt: now + CACHE_TTL_MS };
@@ -981,7 +1130,7 @@ async function getAsset(key) {
     console.log(`✅ ${cfg.name}: ${data.price.toFixed(cfg.decimals)} [Twelve Data]`);
     return data;
   } catch (err) {
-    console.log(`❌ ${cfg.name} erro: ${err.message} — fallback`);
+    console.log(`❌ ${cfg.name} erro: ${err.message} — fallback simulação`);
     const now  = Date.now();
     const data = { ...generateFallback(cfg.fallbackPrice, cfg.vol, cfg.decimals), asset: cfg.name, updatedAt: now, nextUpdateAt: now + CACHE_TTL_MS };
     cache[key] = { data, updatedAt: now };
@@ -1411,18 +1560,20 @@ app.get('/api/usdjpy', rateLimit, (req, res) => safeGetAsset('usdjpy', res));
 app.get('/api/health', rateLimit, (req, res) => {
   const status = {};
   Object.entries(ASSETS).forEach(([key, cfg]) => {
-    const c = cache[key];
+    const c   = cache[key];
     const age = c.updatedAt ? Math.round((Date.now() - c.updatedAt) / 60000) : null;
     status[cfg.name] = c.data?.price
-      ? `${c.data.price.toFixed(cfg.decimals)} (${age}min atrás) [${c.data.source}]`
+      ? `${c.data.price.toFixed(cfg.decimals)} (${age}min atrás) [${c.data.source || 'n/a'}]`
       : 'carregando...';
   });
   res.json({
-    status: 'ok',
-    version: VERSION,
-    apiKey: TWELVE_DATA_KEY === 'COLE_SUA_CHAVE_AQUI' ? '❌ NÃO CONFIGURADO (.env)' : '✅ OK',
-    cacheExpira: `${CACHE_TTL_MS / 60000} min`,
-    ativos: status
+    status:        'ok',
+    version:       VERSION,
+    twelveDataKey: TWELVE_DATA_KEY === 'COLE_SUA_CHAVE_AQUI' ? '❌ não configurado' : '✅ ok',
+    btcFonte:      cache['btc']?.data?.source || 'carregando...',
+    oanda:         OANDA_API_KEY  ? `✅ configurado (${OANDA_PRACTICE ? 'prática' : 'real'})` : 'ℹ️ não configurado (usando Twelve Data)',
+    alertInterval: `${ALERT_INTERVAL_MS / 60000} min`,
+    ativos:        status,
   });
 });
 
@@ -1504,24 +1655,19 @@ app.get('/api/analysis/:asset', rateLimit, async (req, res) => {
 });
 
 // ===== AUTO-REFRESH + ALERTAS =====
+// Com fontes real-time ativas, o ciclo roda a cada 2 min para processar alertas
+// sem esperar 15 min. getAsset() retorna do cache se real-time estiver fresco.
+const ALERT_INTERVAL_MS = OANDA_API_KEY ? 2 * 60 * 1000 : CACHE_TTL_MS;
+
 setInterval(async () => {
-  console.log('\n🔄 Atualizando cache...');
-  Object.keys(ASSETS).forEach(k => { cache[k].updatedAt = null; });
   for (const key of Object.keys(ASSETS)) {
     try {
       const data = await getAsset(key);
-
-      // Alertas do dashboard regular (score EMA/MACD/Breakout)
       await checkAndSendAlerts(key, data);
 
-      // ── Alertas VIP automáticos ───────────────────────────────────────────
-      // computeVipSignal só é chamado manualmente via rota — nunca pelo ciclo.
-      // Aqui rodamos o motor VIP para cada ativo a cada 15min com skipPersist=false,
-      // permitindo que o Telegram dispare quando score >= 4 e cooldown liberado.
       if (!data.isSimulation && !data.isMarketClosed) {
         try {
           await computeVipSignal(key, '15m', '1h', { skipPersist: false });
-          console.log(`⭐ VIP scan ${ASSETS[key].name} concluído`);
         } catch (vipErr) {
           console.log(`⚠️  VIP scan ${key}:`, vipErr.message);
         }
@@ -1530,7 +1676,15 @@ setInterval(async () => {
       console.log(`⚠️  Erro no ciclo de ${key}:`, err.message);
     }
   }
-}, CACHE_TTL_MS);
+}, ALERT_INTERVAL_MS);
+
+// Kraken polling BTC a cada 2 min
+setInterval(pollBtcKraken, 2 * 60 * 1000);
+
+// OANDA polling separado a cada 2 min (independente do ciclo de alertas)
+if (OANDA_API_KEY) {
+  setInterval(pollOanda, OANDA_POLL_MS);
+}
 
 // ===== START =====
 app.listen(PORT, async () => {
@@ -1541,10 +1695,25 @@ app.listen(PORT, async () => {
   console.log(`╚══════════════════════════════════════════╝\n`);
 
   if (TWELVE_DATA_KEY === 'COLE_SUA_CHAVE_AQUI') {
-    console.log('⚠️  Crie o arquivo .env com: TWELVE_DATA_KEY=sua_chave\n');
+    console.log('⚠️  TWELVE_DATA_KEY não configurada — usando como fallback apenas\n');
   }
-  console.log('📥 Carregando todos os ativos...\n');
-  for (const key of Object.keys(ASSETS)) await getAsset(key);
+
+  // ── Binance WebSocket (BTC) ──────────────────────────────────────────────
+  console.log('🔗 Iniciando Binance WebSocket (BTC)...');
+  await loadBtcHistory();   // carrega histórico inicial via REST
+  connectBinanceWS();       // conecta stream em tempo real
+
+  // ── OANDA (XAU/EUR/JPY) ─────────────────────────────────────────────────
+  if (OANDA_API_KEY) {
+    console.log(`⚡ OANDA_API_KEY detectada — XAU/EUR/JPY em tempo real (${OANDA_PRACTICE ? 'prática' : 'real'})`);
+    await pollOanda(); // carga inicial imediata
+  } else {
+    console.log('ℹ️  OANDA_API_KEY não configurada — XAU/EUR/JPY usará Twelve Data (15min)');
+    console.log('   Para ativar: adicione OANDA_API_KEY=seu_token no .env\n');
+    console.log('📥 Carregando ativos via Twelve Data...\n');
+    for (const key of ['xauusd', 'eurusd', 'usdjpy']) await getAsset(key);
+  }
+
   // Carrega calendário econômico
   await fetchEconomicCalendar();
   console.log('\n✅ Pronto! http://localhost:3000/dashboard.html\n');

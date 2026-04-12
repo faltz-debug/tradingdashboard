@@ -1064,13 +1064,52 @@ function renderStrategies(asset) {
     else if (aligned)                         { trendSig = 'TENDÊNCIA ↑'; trendConf = 60; }
     else if (ema9 < ema20 && ema20 < ema50)   { trendSig = 'TENDÊNCIA ↓'; trendConf = 55; }
 
-    // Strategy 2: EMA Crossover (9/20)
-    const emaSig  = ema9 > ema20 ? 'COMPRA' : 'VENDA';
-    let emaConf   = 40;
-    if (rsi < 30 || rsi > 70) emaConf += 20;
-    if (price > ema20)        emaConf += 20;
-    if (macd > 0)             emaConf += 15;
-    emaConf = Math.min(95, emaConf);
+    // Strategy 2: Inside Bar (compressão de volatilidade)
+    // mother = candles[last-1], inside = candles[last-2] não — lógica:
+    // vela mãe = candles[last-2], inside bar = candles[last-1], confirmação = candles[last]
+    const ibMother  = last >= 2 ? candles[last-2] : null;
+    const ibInside  = last >= 1 ? candles[last-1] : null;
+    const ibCurrent = candles[last];
+    // ATR simples das últimas 14 velas (para SL e confiança)
+    const ibAtrVals = candles.slice(-15).map((c,i,arr) => {
+        if(i===0) return c.high-c.low;
+        return Math.max(c.high-c.low, Math.abs(c.high-arr[i-1].close), Math.abs(c.low-arr[i-1].close));
+    });
+    const ibAtr = ibAtrVals.reduce((a,b)=>a+b,0)/ibAtrVals.length;
+
+    const ibFormed = ibMother && ibInside &&
+        ibInside.high <= ibMother.high && ibInside.low >= ibMother.low;
+
+    let ibSig  = 'AGUARDAR';
+    let ibConf = 30;
+    let ibSLval = null;
+
+    if (ibFormed) {
+        const brkUp   = ibCurrent.close > ibMother.high;
+        const brkDown = ibCurrent.close < ibMother.low;
+        const trendUp   = ema9 > ema50;
+        const trendDown = ema9 < ema50;
+        const adxOkIb   = ind.adxResult?.adx >= 25;
+
+        if (brkUp && trendUp) {
+            ibSig  = 'COMPRA';
+            ibSLval = ibMother.low - ibAtr * 0.1;
+            ibConf = 60;
+            if (adxOkIb) ibConf += 20;
+            if (macd > 0) ibConf += 10;
+        } else if (brkDown && trendDown) {
+            ibSig  = 'VENDA';
+            ibSLval = ibMother.high + ibAtr * 0.1;
+            ibConf = 60;
+            if (adxOkIb) ibConf += 20;
+            if (macd < 0) ibConf += 10;
+        } else {
+            // Inside bar formada mas sem rompimento ainda
+            ibSig  = 'AGUARDAR ROMPIMENTO';
+            ibConf = 50;
+        }
+    }
+    ibConf = Math.min(95, ibConf);
 
     // Strategy 3: RSI + Bollinger
     const rsiSig  = rsi < 30 ? 'COMPRA' : rsi > 70 ? 'VENDA' : 'NEUTRO';
@@ -1177,7 +1216,7 @@ function renderStrategies(asset) {
 
     // SL técnico por estratégia
     const trendSL  = trendSig==='COMPRA' ? ema50 : trendSig==='VENDA' ? ema50 : null;
-    const emaSLval = emaSig==='COMPRA' ? Math.min(ema20, last5Low) : Math.max(ema20, last5High);
+    // ibSLval já calculado na lógica do Inside Bar acima
     const rsiSLval = rsiSig==='COMPRA' ? last5Low : rsiSig==='VENDA' ? last5High : null;
     const macdSLval= macdSig==='COMPRA' ? Math.min(ema20, last5Low) : Math.max(ema20, last5High);
     const bkSLval  = bkSig==='COMPRA' ? last5Low : bkSig==='VENDA' ? last5High : null;
@@ -1190,9 +1229,12 @@ function renderStrategies(asset) {
             ['EMA 50', fmt(ema50)]
         ], trendSig, trendConf, trendSL ? entryBlock(trendSig, price, trendSL) : '') +
 
-        card('📈 EMA Crossover (9/20)', [
-            ['EMA 9', fmt(ema9)], ['EMA 20', fmt(ema20)], ['Diferença', fmt(ema9 - ema20)]
-        ], emaSig, emaConf, entryBlock(emaSig, price, emaSLval)) +
+        card('🕯️ Inside Bar (Compressão)', [
+            ['Vela mãe (H/L)', ibMother ? `${fmt(ibMother.high)} / ${fmt(ibMother.low)}` : '—'],
+            ['Inside bar', ibFormed ? '✅ Formada' : '⏳ Aguardando'],
+            ['ATR atual', fmt(ibAtr)],
+            ['Tendência EMA', ema9 > ema50 ? '📈 Alta (EMA9 > EMA50)' : ema9 < ema50 ? '📉 Baixa (EMA9 < EMA50)' : '↔️ Lateral']
+        ], ibSig, ibConf, ibSLval ? entryBlock(ibSig, price, ibSLval) : '') +
 
         card('⚙️ MACD Crossover (12,26,9)', [
             ['MACD', macd.toFixed(dec)], ['Signal', sig.toFixed(dec)], ['Histograma', (macd-sig).toFixed(dec)]

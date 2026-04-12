@@ -149,6 +149,13 @@
         <button id="wf-toggle" onclick="toggleWF(this)" style="padding:5px 16px;background:#0d1526;border:1px solid #2d1b69;color:#7c3aed;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700;font-family:'Courier New',monospace;transition:all .2s">OFF</button>
         <span style="font-size:10px;color:#64748b">Divide os dados em <b style="color:#00d4ff">70% treino</b> / <b style="color:#f59e0b">30% teste OOS</b> — detecta se a estratégia está overfitted ou é genuinamente robusta</span>
     </div>
+
+    <!-- News Blackout Toggle -->
+    <div style="flex:1;min-width:280px;display:flex;align-items:center;gap:10px;padding:10px 16px;background:#070b14;border:1px solid #b91c1c;border-radius:8px;flex-wrap:wrap">
+        <span style="font-size:11px;color:#ef4444;font-weight:700;text-transform:uppercase;letter-spacing:.05em">📰 News Blackout:</span>
+        <button id="nb-toggle" onclick="toggleNewsBlackout(this)" style="padding:5px 16px;background:#0d1526;border:1px solid #b91c1c;color:#ef4444;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700;font-family:'Courier New',monospace;transition:all .2s">OFF</button>
+        <span style="font-size:10px;color:#64748b">Evita operar nos <b style="color:#ef4444">±30min</b> de eventos econômicos (Fed, BCE, BoE, CPI, NFP, etc)</span>
+    </div>
     </div><!-- end toggles row -->
 
     <!-- ASSET TABS -->
@@ -398,6 +405,27 @@ function toggleWF(btn) {
             const el = document.getElementById('wf-'+a);
             if (el) el.classList.remove('active');
         });
+    }
+    // Re-run current visible backtest
+    ['xau','btc','eur','jpy'].forEach(a => {
+        if (assetData[a]) {
+            const stratBtn = document.querySelector(`#tab-${a} .strat-btn.active`);
+            if (stratBtn) runBacktest(a, activeStrat[a], stratBtn);
+        }
+    });
+}
+
+// ─── NEWS BLACKOUT STATE ───
+let newsBlackoutEnabled = false;
+
+function toggleNewsBlackout(btn) {
+    newsBlackoutEnabled = !newsBlackoutEnabled;
+    if (newsBlackoutEnabled) {
+        btn.textContent = 'ON';
+        btn.style.cssText = 'padding:5px 16px;background:#ef4444;border:1px solid #ef4444;color:#fff;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700;font-family:\'Courier New\',monospace';
+    } else {
+        btn.textContent = 'OFF';
+        btn.style.cssText = 'padding:5px 16px;background:#0d1526;border:1px solid #b91c1c;color:#ef4444;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700;font-family:\'Courier New\',monospace';
     }
     // Re-run current visible backtest
     ['xau','btc','eur','jpy'].forEach(a => {
@@ -756,6 +784,55 @@ function isGoodSession(timestampSec, asset) {
     return london || ny;
 }
 
+// ─── NEWS BLACKOUT: evita operar nos ±30min de eventos econômicos ───
+// Eventos importantes: Fed, BCE, BoE, CPI, NFP, PoMC, ECB decisions, etc
+function isNewsBlackoutTime(timestampSec) {
+    if (!newsBlackoutEnabled) return false;
+    const date = new Date(timestampSec * 1000);
+    const h = date.getUTCHours();
+    const m = date.getUTCMinutes();
+    const dow = date.getUTCDay();
+
+    // Horários de eventos (aproximados, em minutos UTC)
+    const eventTimes = [
+        // EUA: 8:30 AM UTC = jobless claims, CPI, NFP, Durable Orders, etc
+        { h: 8, m: 30, delta: 30 },
+        // EUA: 10:00 AM UTC = housing, Consumer Sentiment
+        { h: 10, m: 0, delta: 30 },
+        // EUA: 2:00 PM UTC = FOMC decision (raramente, 2x por ano)
+        { h: 14, m: 0, delta: 30 },
+        // EUA: 3:00 PM UTC = ISM Manufacturing/Services
+        { h: 15, m: 0, delta: 30 },
+        // UK: 8:00 AM UTC = BoE decisions, inflation data
+        { h: 8, m: 0, delta: 30 },
+        // UK: 2:00 PM UTC = additional UK data
+        { h: 14, m: 0, delta: 30 },
+        // Zona Euro: 9:00 AM UTC = CPI, GDP (flash)
+        { h: 9, m: 0, delta: 30 },
+        // Zona Euro: 10:00 AM UTC = ECB press releases
+        { h: 10, m: 0, delta: 30 },
+        // Zona Euro: 1:00 PM UTC = ECB decisions, Lagarde press
+        { h: 13, m: 0, delta: 30 },
+        // Canadá: 1:30 PM UTC = employment, CPI
+        { h: 13, m: 30, delta: 30 },
+        // Japão: 8:00 AM UTC = BoJ decisions, inflation
+        { h: 8, m: 0, delta: 30 },
+    ];
+
+    // Verifica se está dentro do intervalo ±delta minutos de algum evento
+    for (const event of eventTimes) {
+        const eventMin = event.h * 60 + event.m;
+        const currentMin = h * 60 + m;
+        const diff = Math.abs(currentMin - eventMin);
+        if (diff <= event.delta) {
+            // Não operar se estiver nas 12h de quinta a segunda (período com mais volatilidade)
+            // ou se evento é na hora exata (maior risco)
+            return true;
+        }
+    }
+    return false;
+}
+
 /// ─── HELPER: calcula lucro líquido (descontando spread + comissão round-trip) ───
 // currentAsset é preenchido por runBacktest() antes de chamar strat.run()
 let _currentAsset = 'xau';
@@ -799,6 +876,7 @@ const STRATEGIES = {
             for(let i=52;i<candles.length;i++){
                 const c=candles[i], prev=candles[i-1];
                 if(!inTrade){
+                    if(isNewsBlackoutTime(c.time)) continue;
                     if(!adx[i]||adx[i]<25) continue;
                     const longAlign  = e9[i]>e20[i]&&e20[i]>e50[i];
                     const shortAlign = e9[i]<e20[i]&&e20[i]<e50[i];
@@ -888,6 +966,7 @@ const STRATEGIES = {
             // i-1 = vela mãe, i-0 = inside bar, i+1 = vela de confirmação (rompimento)
             for(let i=52;i<candles.length-1;i++){
                 if(!inTrade){
+                    if(isNewsBlackoutTime(candles[i].time)) continue;
                     if(!adx[i]||adx[i]<25) continue;
                     const mother = candles[i-1];   // vela mãe
                     const inside = candles[i];     // inside bar
@@ -967,6 +1046,7 @@ const STRATEGIES = {
             for(let i=52;i<candles.length;i++){
                 const c=candles[i];
                 if(!inTrade){
+                    if(isNewsBlackoutTime(c.time)) continue;
                     // FILTRO PRINCIPAL: ADX < 25 — só opera reversão em mercado lateral
                     if(adx[i]&&adx[i]>=25) continue;
                     if(rsi[i]===null||atr[i]===null||bb.lower[i]===null) continue;
@@ -1034,6 +1114,7 @@ const STRATEGIES = {
             for(let i=27;i<candles.length;i++){
                 const c=candles[i];
                 if(!inTrade){
+                    if(isNewsBlackoutTime(c.time)) continue;
                     if(!adx[i]||adx[i]<25) continue;
                     const atrVal=atr[i]||0;
                     const patM=detectCandlePattern(c, candles[i-1]);
@@ -1101,6 +1182,8 @@ const STRATEGIES = {
                 if(!inTrade){
                     // FILTRO 1: sessão London ou NY (BTC sempre passa)
                     if(!isGoodSession(c.time, asset)) continue;
+                    // FILTRO 1.5: News Blackout
+                    if(isNewsBlackoutTime(c.time)) continue;
                     // FILTRO 2: ADX >= 20 (alguma tendência)
                     if(!adx[i]||adx[i]<20) continue;
 
@@ -1404,72 +1487,41 @@ function exportCSV(asset) {
 }
 
 // ─── LOAD DATA ───
-async function loadData(){
-    const dot = document.getElementById('status-dot');
-    const msg = document.getElementById('status-msg');
-    try {
-        const [xr,br,er,jr] = await Promise.all([
-            fetch('/api/xauusd'),
-            fetch('/api/btc'),
-            fetch('/api/eurusd'),
-            fetch('/api/usdjpy')
-        ]);
-        assetData.xau = await xr.json();
-        assetData.btc = await br.json();
-        assetData.eur = await er.json();
-        assetData.jpy = await jr.json();
-        // Verifica se algum ativo está em simulação
-        const simAssets = ['xau','btc','eur','jpy'].filter(a => assetData[a]?.isSimulation);
-        if (simAssets.length > 0) {
-            dot.className='dot dot-yellow';
-            msg.textContent=`⚠️ Conectado — ${simAssets.length} ativo(s) em simulação (API indisponível). Resultados podem não refletir o mercado real.`;
-        } else {
-            dot.className='dot dot-green'; msg.textContent='✅ Conectado ao servidor — dados reais (4 ativos)';
-        }
-    } catch(e){
-        // Fallback: generate simulated data
-        dot.className='dot dot-yellow'; msg.textContent='⚠️ Servidor offline — usando dados simulados (inicie o servidor para dados reais)';
-        assetData.xau = generateSim(2400,   20,    'XAUUSD', 2);
-        assetData.btc = generateSim(70000,  400,   'BTCUSD', 0);
-        assetData.eur = generateSim(1.085,  0.003, 'EURUSD', 5);
-        assetData.jpy = generateSim(150.0,  0.5,   'USDJPY', 3);
-    }
-
-    // Run default strategy for all 4 assets
-    ['xau','btc','eur','jpy'].forEach(a=>{
-        const btn = document.querySelector(`#tab-${a} .strat-btn.active`);
-        runBacktest(a, activeStrat[a], btn);
-    });
+function getBiasWindowSlice(biasCandles, startIdx, endIdx, totalCandles) {
+    if (!biasCandles || !biasCandles.length || totalCandles <= 0) return [];
+    const startRatio = Math.max(0, startIdx / totalCandles);
+    const endRatio = Math.min(1, endIdx / totalCandles);
+    const biasStart = Math.max(0, Math.floor(biasCandles.length * startRatio) - 2);
+    const biasEnd = Math.min(biasCandles.length, Math.ceil(biasCandles.length * endRatio) + 2);
+    return biasCandles.slice(biasStart, biasEnd);
 }
 
-function generateSim(base, vol, asset, dec=2){
-    const candles=[]; let price=base;
-    const now = Math.floor(Date.now()/1000);
-    for(let i=200;i>=0;i--){
-        const chg=(Math.random()-.48)*vol;
-        const o=price, c=o+chg;
-        candles.push({
-            time: now-i*3600,
-            open:  parseFloat(o.toFixed(dec)),
-            high:  parseFloat((Math.max(o,c)+Math.random()*vol*.3).toFixed(dec)),
-            low:   parseFloat((Math.min(o,c)-Math.random()*vol*.3).toFixed(dec)),
-            close: parseFloat(c.toFixed(dec))
+function buildEquityCurve(trades, initialEquity = 1000) {
+    let equity = initialEquity;
+    let peak = initialEquity;
+    let maxDrawdownPct = 0;
+    const points = [];
+
+    trades.forEach((trade) => {
+        equity = equity * (1 + trade.pct / 100);
+        peak = Math.max(peak, equity);
+        const drawdownPct = peak > 0 ? ((peak - equity) / peak) * 100 : 0;
+        maxDrawdownPct = Math.max(maxDrawdownPct, drawdownPct);
+        points.push({
+            equity: parseFloat(equity.toFixed(2)),
+            drawdownPct: parseFloat(drawdownPct.toFixed(2)),
         });
-        price=c;
-    }
-    return {success:true,asset,'15m':candles,'1h':candles,'4h':candles,'daily':candles,price:candles[candles.length-1].close};
+    });
+
+    return {
+        points,
+        finalEquity: parseFloat(equity.toFixed(2)),
+        maxDrawdownPct: parseFloat(maxDrawdownPct.toFixed(2)),
+    };
 }
 
-// ─── NAV ───
-function switchTab(asset, btn){
-    document.querySelectorAll('.tab-content').forEach(e=>e.classList.remove('active'));
-    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
-    document.getElementById('tab-'+asset).classList.add('active');
-    btn.classList.add('active');
-    setTimeout(()=>{if(btCharts[asset])btCharts[asset].timeScale().fitContent();},50);
-}
-
-window.addEventListener('load', loadData);
-</script>
-</body>
-</html>
+function calcSharpeApprox(trades) {
+    if (!trades.length) return 0;
+    const returns = trades.map(t => t.pct / 100);
+    const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
+    const variance = returns.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / returns.length;
