@@ -872,11 +872,16 @@ const STRATEGIES = {
             const trades=[];
             let inTrade=false, tradeType='', entryIdx=0, entryPrice=0;
             let trailStop=0, peakPrice=0; // trailing stop state
+            let lastExitIdx = -1; // cooldown: índice da última saída
+            // ATR multiplicador por ativo — BTC é mais volátil, precisa de mais espaço
+            const atrMult = asset==='btc' ? 2.5 : asset==='xau' ? 1.5 : 1.8;
+            const cooldownBars = asset==='btc' ? 8 : 5; // velas de espera após sair
 
             for(let i=52;i<candles.length;i++){
                 const c=candles[i], prev=candles[i-1];
                 if(!inTrade){
                     if(isNewsBlackoutTime(c.time)) continue;
+                    if(lastExitIdx >= 0 && i - lastExitIdx < cooldownBars) continue; // cooldown
                     if(!adx[i]||adx[i]<25) continue;
                     const longAlign  = e9[i]>e20[i]&&e20[i]>e50[i];
                     const shortAlign = e9[i]<e20[i]&&e20[i]<e50[i];
@@ -894,7 +899,7 @@ const STRATEGIES = {
                         && (!confluenceEnabled || pat.bull)){
                         inTrade=true; tradeType='COMPRA'; entryIdx=i; entryPrice=c.close;
                         peakPrice  = c.close;
-                        trailStop  = peakPrice - 1.5*(atr[i]||atrTol);
+                        trailStop  = peakPrice - atrMult*(atr[i]||atrTol);
                         _entryPattern = pat.name || 'Corpo Forte';
                     }
                     else if(shortAlign && biasOkShort
@@ -903,7 +908,7 @@ const STRATEGIES = {
                         && (!confluenceEnabled || pat.bear)){
                         inTrade=true; tradeType='VENDA'; entryIdx=i; entryPrice=c.close;
                         peakPrice  = c.close;
-                        trailStop  = peakPrice + 1.5*(atr[i]||atrTol);
+                        trailStop  = peakPrice + atrMult*(atr[i]||atrTol);
                         _entryPattern = pat.name || 'Corpo Forte';
                     }
                 } else {
@@ -912,7 +917,7 @@ const STRATEGIES = {
                     if(tradeType==='COMPRA'){
                         // Atualiza peak e sobe o trailing stop
                         if(c.high > peakPrice) peakPrice = c.high;
-                        trailStop = Math.max(trailStop, peakPrice - 1.5*curAtr);
+                        trailStop = Math.max(trailStop, peakPrice - atrMult*curAtr);
                         // Saída: trailing stop tocado OU EMA50 violada (stop de segurança)
                         const hit = c.low <= trailStop;
                         const ema50breach = c.low < e50[i]*0.997;
@@ -920,19 +925,19 @@ const STRATEGIES = {
                             const exitPrice = hit ? Math.min(c.close, trailStop) : c.close;
                             const pct=tradePct(tradeType,entryPrice,exitPrice);
                             trades.push({entryIdx,exitIdx:i,entryPrice,exitPrice,pct,win:pct>0,type:tradeType,pattern:_entryPattern,sl:trailStop,hasSL:true});
-                            inTrade=false;
+                            inTrade=false; lastExitIdx=i;
                         }
                     } else {
                         // VENDA: peakPrice é a mínima acumulada (mais baixa = melhor)
                         if(c.low < peakPrice) peakPrice = c.low;
-                        trailStop = Math.min(trailStop, peakPrice + 1.5*curAtr);
+                        trailStop = Math.min(trailStop, peakPrice + atrMult*curAtr);
                         const hit = c.high >= trailStop;
                         const ema50breach = c.high > e50[i]*1.003;
                         if(hit || ema50breach){
                             const exitPrice = hit ? Math.max(c.close, trailStop) : c.close;
                             const pct=tradePct(tradeType,entryPrice,exitPrice);
                             trades.push({entryIdx,exitIdx:i,entryPrice,exitPrice,pct,win:pct>0,type:tradeType,pattern:_entryPattern,sl:trailStop,hasSL:true});
-                            inTrade=false;
+                            inTrade=false; lastExitIdx=i;
                         }
                     }
                 }
