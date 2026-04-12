@@ -868,20 +868,27 @@ const STRATEGIES = {
             const e9=calcEMA(closes,9), e20=calcEMA(closes,20), e50=calcEMA(closes,50);
             const adx=calcADX(candles,14);
             const atr=calcATR(candles,14);
+            const rsi=calcRSI(closes,14);
             const bias=getBiasDirection(biasCandles);
             const trades=[];
             let inTrade=false, tradeType='', entryIdx=0, entryPrice=0;
             let trailStop=0, peakPrice=0; // trailing stop state
+            let entryATR=0; // ATR no momento da entrada — âncora do trailing stop
             let lastExitIdx = -1; // cooldown: índice da última saída
             // ATR multiplicador por ativo — BTC é mais volátil, precisa de mais espaço
             const atrMult = asset==='btc' ? 2.5 : asset==='xau' ? 1.5 : 1.8;
-            const cooldownBars = asset==='btc' ? 8 : 5; // velas de espera após sair
+            // Cooldown dinâmico: mais espera em ADX fraco (mercado indeciso)
+            const getCooldown = (adxVal) => {
+                if(asset==='btc') return adxVal<30 ? 12 : 8;
+                return 5;
+            };
 
             for(let i=52;i<candles.length;i++){
                 const c=candles[i], prev=candles[i-1];
                 if(!inTrade){
                     if(isNewsBlackoutTime(c.time)) continue;
-                    if(lastExitIdx >= 0 && i - lastExitIdx < cooldownBars) continue; // cooldown
+                    const currentCooldown = getCooldown(adx[i]||0);
+                    if(lastExitIdx >= 0 && i - lastExitIdx < currentCooldown) continue; // cooldown dinâmico
                     if(!adx[i]||adx[i]<25) continue;
                     const longAlign  = e9[i]>e20[i]&&e20[i]>e50[i];
                     const shortAlign = e9[i]<e20[i]&&e20[i]<e50[i];
@@ -899,16 +906,19 @@ const STRATEGIES = {
                         && (!confluenceEnabled || pat.bull)){
                         inTrade=true; tradeType='COMPRA'; entryIdx=i; entryPrice=c.close;
                         peakPrice  = c.close;
-                        trailStop  = peakPrice - atrMult*(atr[i]||atrTol);
+                        entryATR   = atr[i] || atrTol; // âncora: ATR no momento da entrada
+                        trailStop  = peakPrice - atrMult*entryATR;
                         _entryPattern = pat.name || 'Corpo Forte';
                     }
                     else if(shortAlign && biasOkShort
                         && Math.abs(prev.high-e20[i-1])<atrTol*1.2
                         && c.close<c.open && c.close<e9[i] && strongBody
-                        && (!confluenceEnabled || pat.bear)){
+                        && (!confluenceEnabled || pat.bear)
+                        && rsi[i]<=60){  // RSI confirmation: não vender enquanto RSI ainda está alto
                         inTrade=true; tradeType='VENDA'; entryIdx=i; entryPrice=c.close;
                         peakPrice  = c.close;
-                        trailStop  = peakPrice + atrMult*(atr[i]||atrTol);
+                        entryATR   = atr[i] || atrTol; // âncora: ATR no momento da entrada
+                        trailStop  = peakPrice + atrMult*entryATR;
                         _entryPattern = pat.name || 'Corpo Forte';
                     }
                 } else {
@@ -917,7 +927,9 @@ const STRATEGIES = {
                     if(tradeType==='COMPRA'){
                         // Atualiza peak e sobe o trailing stop
                         if(c.high > peakPrice) peakPrice = c.high;
-                        trailStop = Math.max(trailStop, peakPrice - atrMult*curAtr);
+                        // effectiveATR: nunca deixa o stop ficar mais apertado que na entrada
+                        const effectiveATR_buy = Math.max(curAtr, entryATR);
+                        trailStop = Math.max(trailStop, peakPrice - atrMult*effectiveATR_buy);
                         // Saída: trailing stop tocado OU EMA50 violada (stop de segurança)
                         const hit = c.low <= trailStop;
                         const ema50breach = c.low < e50[i]*0.997;
@@ -930,7 +942,10 @@ const STRATEGIES = {
                     } else {
                         // VENDA: peakPrice é a mínima acumulada (mais baixa = melhor)
                         if(c.low < peakPrice) peakPrice = c.low;
-                        trailStop = Math.min(trailStop, peakPrice + atrMult*curAtr);
+                        // effectiveATR: nunca deixa o stop ficar mais apertado que na entrada
+                        // Impede que a redução do ATR cause contração abrupta do trailing stop
+                        const effectiveATR_sell = Math.max(curAtr, entryATR);
+                        trailStop = Math.min(trailStop, peakPrice + atrMult*effectiveATR_sell);
                         const hit = c.high >= trailStop;
                         const ema50breach = c.high > e50[i]*1.003;
                         if(hit || ema50breach){
@@ -988,7 +1003,7 @@ const STRATEGIES = {
                     if(confirm.close>mother.high && e9[i]>e50[i] && (bias==='BUY'||bias==='NEUTRAL')
                         && (!confluenceEnabled || patConf.bull)){
                         entryPrice=confirm.close;
-                        slPrice   =mother.low - atrVal*0.1;
+                        slPrice   =mother.low - atrVal*0.2;
                         const risk=entryPrice-slPrice;
                         if(risk<=0) continue;
                         tpPrice=entryPrice+2*risk;
@@ -999,7 +1014,7 @@ const STRATEGIES = {
                     else if(confirm.close<mother.low && e9[i]<e50[i] && (bias==='SELL'||bias==='NEUTRAL')
                         && (!confluenceEnabled || patConf.bear)){
                         entryPrice=confirm.close;
-                        slPrice   =mother.high + atrVal*0.1;
+                        slPrice   =mother.high + atrVal*0.2;
                         const risk=slPrice-entryPrice;
                         if(risk<=0) continue;
                         tpPrice=entryPrice-2*risk;
@@ -1052,8 +1067,8 @@ const STRATEGIES = {
                 const c=candles[i];
                 if(!inTrade){
                     if(isNewsBlackoutTime(c.time)) continue;
-                    // FILTRO PRINCIPAL: ADX < 25 — só opera reversão em mercado lateral
-                    if(adx[i]&&adx[i]>=25) continue;
+                    // FILTRO PRINCIPAL: ADX < 20 — relaxado para capturar mais reversões em mercado lateral
+                    if(adx[i]&&adx[i]>=20) continue;
                     if(rsi[i]===null||atr[i]===null||bb.lower[i]===null) continue;
                     const e50Slope=e50[i]-e50[Math.max(0,i-10)];
 
@@ -1096,9 +1111,11 @@ const STRATEGIES = {
     },
 
     macd: {
-        name: '⚙️ MACD + ADX + Linha Zero + SL/TP',
+        name: '⚙️ MACD + ADX + Linha Zero + SL/TP (⚠️ ZERO EDGE - NÃO RECOMENDADO)',
         explain: `
-            <b>Filtros obrigatórios:</b>
+            <b style="color: #ff6666;">⚠️ AVISO: Esta estratégia tem zero edge comprovado (14,3 milhões de backtests).</b><br>
+            <b style="color: #ff6666;">Recomendação: Use apenas como FILTRO de confirmação, não como estratégia primária.</b><br><br>
+            <b>Lógica:</b><br>
             <span class="condition">ADX ≥ 25</span>
             <span class="condition">Cruzamento do lado correto da linha zero</span>
             <span class="condition">Bias do TF maior na mesma direção</span><br><br>
@@ -1106,7 +1123,7 @@ const STRATEGIES = {
             &nbsp;&nbsp;&nbsp;→ SL = Entrada − 2×ATR &nbsp;|&nbsp; TP = Entrada + 3×ATR (RR 1.5:1) &nbsp;|&nbsp; Saída antecipada: cruzamento inverso<br><br>
             <b>🔴 VENDA:</b> MACD cruza abaixo da Signal + MACD &lt; 0 + ADX ≥ 25 + bias SELL/NEUTRAL<br>
             &nbsp;&nbsp;&nbsp;→ SL = Entrada + 2×ATR &nbsp;|&nbsp; TP = Entrada − 3×ATR (RR 1.5:1) &nbsp;|&nbsp; Saída antecipada: cruzamento inverso<br><br>
-            <i>Pesquisa: 14,3 milhões de combinações testadas — MACD puro = zero edge. Com linha zero + ADX + bias + SL fixo em ATR, limita o drawdown por trade e evita segurar posição perdedora indefinidamente.</i>
+            <i>O MACD é um indicador derivado (lagging) — apenas reactivo, não preditivo. Mantido aqui para comparação, mas teste prioritariamente RSI, Inside Bar e Breakout.</i>
         `,
         hasSL: true,
         run(candles, biasCandles, asset){
@@ -1182,18 +1199,18 @@ const STRATEGIES = {
             const trades=[];
             let inTrade=false, tradeType='', entryIdx=0, entryPrice=0, slPrice=0, tpPrice=0;
 
-            for(let i=21;i<candles.length;i++){
+            for(let i=31;i<candles.length;i++){
                 const c=candles[i];
                 if(!inTrade){
                     // FILTRO 1: sessão London ou NY (BTC sempre passa)
                     if(!isGoodSession(c.time, asset)) continue;
                     // FILTRO 1.5: News Blackout
                     if(isNewsBlackoutTime(c.time)) continue;
-                    // FILTRO 2: ADX >= 20 (alguma tendência)
-                    if(!adx[i]||adx[i]<20) continue;
+                    // FILTRO 2: ADX >= 25 (tendência forte requerida)
+                    if(!adx[i]||adx[i]<25) continue;
 
-                    const high20=Math.max(...candles.slice(i-20,i).map(x=>x.high));
-                    const low20 =Math.min(...candles.slice(i-20,i).map(x=>x.low));
+                    const high20=Math.max(...candles.slice(i-30,i).map(x=>x.high));
+                    const low20 =Math.min(...candles.slice(i-30,i).map(x=>x.low));
                     const low5  =Math.min(...candles.slice(i-5, i).map(x=>x.low));
                     const high5 =Math.max(...candles.slice(i-5, i).map(x=>x.high));
                     const atrVal=atr[i]||0;
