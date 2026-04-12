@@ -169,7 +169,8 @@
     <!-- XAU -->
     <div class="tab-content active" id="tab-xau">
         <div class="strat-selector">
-            <button class="strat-btn active" onclick="runBacktest('xau','trend',this)">🎯 EMA Tendência (9/20/50)</button>
+            <button class="strat-btn active" onclick="runBacktest('xau','master',this)">🧠 Master Signal</button>
+            <button class="strat-btn" onclick="runBacktest('xau','trend',this)">🎯 EMA Tendência (9/20/50)</button>
             <button class="strat-btn" onclick="runBacktest('xau','ema',this)">🕯️ Inside Bar</button>
             <button class="strat-btn" onclick="runBacktest('xau','rsi',this)">📊 RSI Reversão</button>
             <button class="strat-btn" onclick="runBacktest('xau','macd',this)">⚙️ MACD Crossover</button>
@@ -231,7 +232,8 @@
     <!-- BTC -->
     <div class="tab-content" id="tab-btc">
         <div class="strat-selector">
-            <button class="strat-btn active" onclick="runBacktest('btc','trend',this)">🎯 EMA Tendência (9/20/50)</button>
+            <button class="strat-btn active" onclick="runBacktest('btc','master',this)">🧠 Master Signal</button>
+            <button class="strat-btn" onclick="runBacktest('btc','trend',this)">🎯 EMA Tendência (9/20/50)</button>
             <button class="strat-btn" onclick="runBacktest('btc','ema',this)">🕯️ Inside Bar</button>
             <button class="strat-btn" onclick="runBacktest('btc','rsi',this)">📊 RSI Reversão</button>
             <button class="strat-btn" onclick="runBacktest('btc','macd',this)">⚙️ MACD Crossover</button>
@@ -281,7 +283,8 @@
     <!-- EUR -->
     <div class="tab-content" id="tab-eur">
         <div class="strat-selector">
-            <button class="strat-btn active" onclick="runBacktest('eur','trend',this)">🎯 EMA Tendência (9/20/50)</button>
+            <button class="strat-btn active" onclick="runBacktest('eur','master',this)">🧠 Master Signal</button>
+            <button class="strat-btn" onclick="runBacktest('eur','trend',this)">🎯 EMA Tendência (9/20/50)</button>
             <button class="strat-btn" onclick="runBacktest('eur','ema',this)">🕯️ Inside Bar</button>
             <button class="strat-btn" onclick="runBacktest('eur','rsi',this)">📊 RSI Reversão</button>
             <button class="strat-btn" onclick="runBacktest('eur','macd',this)">⚙️ MACD Crossover</button>
@@ -331,7 +334,8 @@
     <!-- JPY -->
     <div class="tab-content" id="tab-jpy">
         <div class="strat-selector">
-            <button class="strat-btn active" onclick="runBacktest('jpy','trend',this)">🎯 EMA Tendência (9/20/50)</button>
+            <button class="strat-btn active" onclick="runBacktest('jpy','master',this)">🧠 Master Signal</button>
+            <button class="strat-btn" onclick="runBacktest('jpy','trend',this)">🎯 EMA Tendência (9/20/50)</button>
             <button class="strat-btn" onclick="runBacktest('jpy','ema',this)">🕯️ Inside Bar</button>
             <button class="strat-btn" onclick="runBacktest('jpy','rsi',this)">📊 RSI Reversão</button>
             <button class="strat-btn" onclick="runBacktest('jpy','macd',this)">⚙️ MACD Crossover</button>
@@ -384,7 +388,7 @@
 const assetData  = { xau: null, btc: null, eur: null, jpy: null };
 const btCharts   = { xau: null, btc: null, eur: null, jpy: null };
 const eqCharts   = { xau: null, btc: null, eur: null, jpy: null };
-const activeStrat = { xau: 'trend', btc: 'trend', eur: 'trend', jpy: 'trend' };
+const activeStrat = { xau: 'master', btc: 'master', eur: 'master', jpy: 'master' };
 const activeTF    = { xau: '1h',    btc: '1h',    eur: '1h',    jpy: '1h' };
 const lastTrades  = { xau: [],     btc: [],     eur: [],     jpy: [] };
 const lastCandles = { xau: [],     btc: [],     eur: [],     jpy: [] };
@@ -848,6 +852,76 @@ function tradePct(type, entry, exit) {
 
 // ─── STRATEGIES ───
 const STRATEGIES = {
+    master: {
+        name: '🧠 Master Signal + ADX + ATR',
+        explain: `
+            <strong>Estratégia: réplica do sinal mestre do servidor</strong><br><br>
+            <b>Compra:</b> EMA9 &gt; EMA20 &gt; EMA50 + RSI &gt; 55 + breakout das últimas 20 velas + ADX &ge; 25<br>
+            <b>Venda:</b> EMA9 &lt; EMA20 &lt; EMA50 + RSI &lt; 45 + breakdown das últimas 20 velas + ADX &ge; 25<br>
+            &nbsp;&nbsp;&nbsp;→ Stop = 1.5×ATR &nbsp;|&nbsp; Alvo = 3×ATR &nbsp;|&nbsp; Saída antecipada se o score perder força<br><br>
+            <i>Use esta aba para validar no backtest exatamente a mesma lógica direcional usada pelo servidor ao vivo.</i>
+        `,
+        hasSL: true,
+        run(candles) {
+            const closes = candles.map(c => c.close);
+            const e9 = calcEMA(closes, 9), e20 = calcEMA(closes, 20), e50 = calcEMA(closes, 50);
+            const rsi = calcRSI(closes, 14);
+            const atr = calcATR(candles, 14);
+            const adx = calcADX(candles, 14);
+            const trades = [];
+            let inTrade = false, tradeType = '', entryIdx = 0, entryPrice = 0, slPrice = 0, tpPrice = 0;
+
+            const getScore = (i) => {
+                const trendSig = e9[i] > e20[i] && e20[i] > e50[i] ? 1 : e9[i] < e20[i] && e20[i] < e50[i] ? -1 : 0;
+                const rsiSig = rsi[i] > 55 ? 1 : rsi[i] < 45 ? -1 : 0;
+                const prev = candles.slice(Math.max(0, i - 20), i);
+                const high20 = prev.length ? Math.max(...prev.map(c => c.high)) : candles[i].close;
+                const low20 = prev.length ? Math.min(...prev.map(c => c.low)) : candles[i].close;
+                const breakoutSig = candles[i].close > high20 ? 1 : candles[i].close < low20 ? -1 : 0;
+                return trendSig + rsiSig + breakoutSig;
+            };
+
+            for (let i = 55; i < candles.length; i++) {
+                const score = getScore(i);
+                const c = candles[i];
+
+                if (!inTrade) {
+                    if (!adx[i] || adx[i] < 25 || !atr[i]) continue;
+                    if (score === 3) {
+                        entryPrice = c.close;
+                        slPrice = entryPrice - 1.5 * atr[i];
+                        tpPrice = entryPrice + 3 * atr[i];
+                        inTrade = true; tradeType = 'COMPRA'; entryIdx = i;
+                    } else if (score === -3) {
+                        entryPrice = c.close;
+                        slPrice = entryPrice + 1.5 * atr[i];
+                        tpPrice = entryPrice - 3 * atr[i];
+                        inTrade = true; tradeType = 'VENDA'; entryIdx = i;
+                    }
+                } else {
+                    let exit = false, exitPrice = c.close;
+                    const scoreWeak = tradeType === 'COMPRA' ? score <= 0 : score >= 0;
+
+                    if (tradeType === 'COMPRA') {
+                        if (c.low <= slPrice) { exit = true; exitPrice = slPrice; }
+                        else if (c.high >= tpPrice) { exit = true; exitPrice = tpPrice; }
+                        else if (scoreWeak) { exit = true; }
+                    } else {
+                        if (c.high >= slPrice) { exit = true; exitPrice = slPrice; }
+                        else if (c.low <= tpPrice) { exit = true; exitPrice = tpPrice; }
+                        else if (scoreWeak) { exit = true; }
+                    }
+
+                    if (exit) {
+                        const pct = tradePct(tradeType, entryPrice, exitPrice);
+                        trades.push({ entryIdx, exitIdx: i, entryPrice, exitPrice, pct, win: pct > 0, type: tradeType, sl: slPrice, tp: tpPrice, hasSL: true });
+                        inTrade = false;
+                    }
+                }
+            }
+            return trades;
+        }
+    },
     trend: {
         name: '🎯 EMA Tendência + ADX + Bias + Trailing Stop ATR',
         explain: `
@@ -1447,103 +1521,46 @@ function renderTradesTable(asset, candles, trades){
             <td>${i+1}</td>
             <td>${new Date(candles[t.entryIdx].time*1000).toLocaleDateString('pt-BR')}</td>
             <td>${new Date(candles[t.exitIdx].time*1000).toLocaleDateString('pt-BR')}</td>
-            <td>${t.type}</td>
+            <td>${t.type==='COMPRA'?'🟢 COMPRA':'🔴 VENDA'}</td>
             ${patCol}
             <td>${fmt(t.entryPrice)}</td>
             ${slTpCols}
             <td>${fmt(t.exitPrice)}</td>
-            <td>${t.pct>0?'+':''}${t.pct.toFixed(2)}%</td>
-            <td style="font-weight:700">${earn>0?'+':''}$${earn.toFixed(2)}</td>
+            <td style="color:${t.win?'#00ff41':'#ff3355'}">${t.pct.toFixed(2)}%</td>
+            <td style="color:${t.win?'#00ff41':'#ff3355'}">${Math.round(equity-earn)}->${Math.round(equity)}</td>
         </tr>`;
     }).join('');
 }
 
-// ─── EXPORT CSV ───
-function exportCSV(asset) {
-    const trades  = lastTrades[asset];
-    const candles = lastCandles[asset];
-    if (!trades.length) { alert('Rode o backtest primeiro para gerar trades.'); return; }
+// Fetch dos dados (simulado ou real via /api/backtest-data)
+async function fetchData() {
+    try {
+        const res = await fetch('/api/backtest-data');
+        if (!res.ok) {
+            console.error('Erro ao buscar dados:', res.status);
+            return;
+        }
+        const jsonData = await res.json();
 
-    const LABELS = { xau: 'XAUUSD', btc: 'BTCUSD', eur: 'EURUSD', jpy: 'USDJPY' };
-    const hasSlTp = trades.some(t => t.sl != null);
-    const strat   = activeStrat[asset].toUpperCase();
-    const tf      = activeTF[asset].toUpperCase();
+        // Popula assetData com candles por asset/TF
+        for (const asset in jsonData) {
+            if (assetData[asset] !== undefined) {
+                assetData[asset] = jsonData[asset];
+            }
+        }
 
-    const hasPat = trades.some(t => t.pattern);
-    const headers = ['#','Data Entrada','Data Saída','Tipo',
-        ...(hasPat ? ['Padrão'] : []),
-        'Preço Entrada',
-        ...(hasSlTp ? ['Stop Loss','Take Profit'] : []),
-        'Preço Saída','Resultado %','Resultado $','Equidade'];
-
-    let equity = 1000;
-    const rows = trades.map((t, i) => {
-        const earn = equity * (t.pct / 100);
-        equity += earn;
-        const dateIn  = new Date(candles[t.entryIdx].time * 1000).toLocaleDateString('pt-BR');
-        const dateOut = new Date(candles[t.exitIdx].time  * 1000).toLocaleDateString('pt-BR');
-        const base = [i+1, dateIn, dateOut, t.type];
-        if (hasPat) base.push(t.pattern || '');
-        base.push(t.entryPrice.toFixed(5));
-        if (hasSlTp) base.push(t.sl ? t.sl.toFixed(5) : '', t.tp ? t.tp.toFixed(5) : '');
-        base.push(t.exitPrice.toFixed(5), (t.pct>0?'+':'')+t.pct.toFixed(2)+'%', (earn>0?'+':'')+'$'+earn.toFixed(2), '$'+equity.toFixed(2));
-        return base.join(',');
-    });
-
-    const csv = [
-        `# Backtester Export — ${LABELS[asset]} | Estratégia: ${strat} | TF: ${tf}`,
-        `# Gerado em: ${new Date().toLocaleString('pt-BR')}`,
-        `# Total trades: ${trades.length} | Win Rate: ${(trades.filter(t=>t.win).length/trades.length*100).toFixed(1)}%`,
-        '',
-        headers.join(','),
-        ...rows
-    ].join('\n');
-
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href     = url;
-    a.download = `backtest_${LABELS[asset]}_${strat}_${tf}_${new Date().toISOString().slice(0,10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+        // Executa backtest inicial (Master Signal, XAU, 1H)
+        const xauBtn = document.querySelector('#tab-xau .strat-btn.active');
+        if (xauBtn) {
+            runBacktest('xau', 'master', xauBtn);
+        }
+    } catch(e) {
+        console.error('Erro ao carregar dados:', e);
+    }
 }
 
-// ─── LOAD DATA ───
-function getBiasWindowSlice(biasCandles, startIdx, endIdx, totalCandles) {
-    if (!biasCandles || !biasCandles.length || totalCandles <= 0) return [];
-    const startRatio = Math.max(0, startIdx / totalCandles);
-    const endRatio = Math.min(1, endIdx / totalCandles);
-    const biasStart = Math.max(0, Math.floor(biasCandles.length * startRatio) - 2);
-    const biasEnd = Math.min(biasCandles.length, Math.ceil(biasCandles.length * endRatio) + 2);
-    return biasCandles.slice(biasStart, biasEnd);
-}
-
-function buildEquityCurve(trades, initialEquity = 1000) {
-    let equity = initialEquity;
-    let peak = initialEquity;
-    let maxDrawdownPct = 0;
-    const points = [];
-
-    trades.forEach((trade) => {
-        equity = equity * (1 + trade.pct / 100);
-        peak = Math.max(peak, equity);
-        const drawdownPct = peak > 0 ? ((peak - equity) / peak) * 100 : 0;
-        maxDrawdownPct = Math.max(maxDrawdownPct, drawdownPct);
-        points.push({
-            equity: parseFloat(equity.toFixed(2)),
-            drawdownPct: parseFloat(drawdownPct.toFixed(2)),
-        });
-    });
-
-    return {
-        points,
-        finalEquity: parseFloat(equity.toFixed(2)),
-        maxDrawdownPct: parseFloat(maxDrawdownPct.toFixed(2)),
-    };
-}
-
-function calcSharpeApprox(trades) {
-    if (!trades.length) return 0;
-    const returns = trades.map(t => t.pct / 100);
-    const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
-    const variance = returns.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / returns.length;
+// Load dados ao abrir a página
+document.addEventListener('DOMContentLoaded', fetchData);
+</script>
+</body>
+</html>
