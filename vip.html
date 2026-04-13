@@ -115,6 +115,20 @@
     .controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
     .controls label { color: var(--muted); font-size: 12px; }
     .controls select { background: var(--card); border: 1px solid var(--border); color: var(--text); padding: 7px 12px; border-radius: 7px; font-size: 13px; cursor: pointer; }
+    .token-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,.03);
+      color: var(--muted);
+      font-size: 11px;
+      white-space: nowrap;
+    }
+    .token-chip.ok { border-color: rgba(38,166,154,.35); color: var(--green); }
+    .token-chip.missing { border-color: rgba(239,83,80,.25); color: var(--red); }
     .btn-refresh { background: var(--gold); color: #000; border: none; padding: 7px 18px; border-radius: 7px; font-weight: 700; font-size: 13px; cursor: pointer; transition: opacity .15s; margin-left: auto; }
     .btn-refresh:hover { opacity: .85; }
     .btn-refresh:disabled { opacity: .5; cursor: default; }
@@ -347,6 +361,7 @@
 
   <!-- CONTROLS -->
   <div class="controls">
+    <div class="token-chip missing" id="vipTokenStatus">🔐 Token VIP ausente</div>
     <label>Ativo</label>
     <select id="selAsset" onchange="syncScannerSelection()">
       <option value="xauusd">XAUUSD</option>
@@ -479,6 +494,7 @@ let autoRefreshTimer = null;
 let countdownTimer = null;
 let countdownSec = 900;
 let equityChartInstance = null;
+let vipToken = '';
 const AUTO_REFRESH_SEC = 900; // 15 minutos — alinhado com CACHE_TTL_MS do servidor
 
 // ── UTILS ──
@@ -505,11 +521,42 @@ function fmtCountdown(sec) {
 }
 
 // ── SCANNER ──
+function getVipToken() {
+  if (vipToken) return vipToken;
+  const params = new URLSearchParams(window.location.search);
+  const fromQuery = (params.get('token') || '').trim();
+  const fromStorage = (localStorage.getItem('vip_token') || '').trim();
+  vipToken = fromQuery || fromStorage;
+  if (fromQuery && fromQuery !== fromStorage) localStorage.setItem('vip_token', fromQuery);
+  return vipToken;
+}
+
+function updateVipTokenBadge() {
+  const badge = document.getElementById('vipTokenStatus');
+  const hasToken = !!getVipToken();
+  badge.className = `token-chip ${hasToken ? 'ok' : 'missing'}`;
+  badge.textContent = hasToken ? '🔐 Token VIP conectado' : '🔐 Token VIP ausente';
+}
+
+async function vipFetch(url, options = {}) {
+  const token = getVipToken();
+  const headers = { ...(options.headers || {}) };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const response = await fetch(url, { ...options, headers });
+  if (response.status === 401 || response.status === 503) {
+    let payload = null;
+    try { payload = await response.clone().json(); } catch (_) { /* ignore */ }
+    throw new Error(payload?.detail || payload?.error || `HTTP ${response.status}`);
+  }
+  return response;
+}
+
 async function runScan() {
   const entryTf = document.getElementById('selEntryTf').value;
   const biasTf  = document.getElementById('selBiasTf').value;
   try {
-    const r = await fetch(`/api/vip/scan?entryTf=${entryTf}&biasTf=${biasTf}`);
+    const r = await vipFetch(`/api/vip/scan?entryTf=${entryTf}&biasTf=${biasTf}`);
     const data = await r.json();
     if (!data.success) return;
     const statusLabels = {
@@ -596,14 +643,14 @@ async function loadSignal() {
   document.getElementById('statusBadge').innerHTML = '<span class="spinner"></span> Calculando...';
 
   try {
-    const r = await fetch(`/api/vip/signal?asset=${asset}&entryTf=${entryTf}&biasTf=${biasTf}`);
+    const r = await vipFetch(`/api/vip/signal?asset=${asset}&entryTf=${entryTf}&biasTf=${biasTf}`);
     const data = await r.json();
     currentSignal = data;
     renderSignal(data);
     document.getElementById('lastUpdate').textContent = 'Atualizado: ' + fmtDate(Date.now());
   } catch(e) {
     document.getElementById('statusBadge').className = 'status-badge NEWS_BLOCKED';
-    document.getElementById('statusBadge').textContent = '⚠️ Erro de conexão';
+    document.getElementById('statusBadge').textContent = `⚠️ ${e.message || 'Erro de conexão'}`;
   }
   btn.disabled = false;
   btn.textContent = '🔄 Atualizar';
@@ -727,7 +774,7 @@ async function openTrade() {
   const msg = document.getElementById('formMsg');
   msg.textContent = ''; msg.className = 'form-msg';
   try {
-    const r = await fetch('/api/vip/trades/open', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    const r = await vipFetch('/api/vip/trades/open', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
     const d = await r.json();
     if (d.success) {
       msg.textContent = '✅ Trade aberto!';
@@ -743,9 +790,9 @@ async function openTrade() {
 // ── TRADES ──
 async function loadTrades() {
   const [r1, r2, r3] = await Promise.all([
-    fetch('/api/vip/trades?status=open&limit=50').then(r => r.json()).catch(() => ({ trades: [] })),
-    fetch('/api/vip/trades?status=closed&limit=200').then(r => r.json()).catch(() => ({ trades: [] })),
-    fetch('/api/vip/stats').then(r => r.json()).catch(() => ({ stats: null })),
+    vipFetch('/api/vip/trades?status=open&limit=50').then(r => r.json()).catch(() => ({ trades: [] })),
+    vipFetch('/api/vip/trades?status=closed&limit=200').then(r => r.json()).catch(() => ({ trades: [] })),
+    vipFetch('/api/vip/stats').then(r => r.json()).catch(() => ({ stats: null })),
   ]);
   renderOpenTrades(r1.trades || []);
   renderClosedTrades(r2.trades || []);
@@ -953,7 +1000,7 @@ async function loadSignalHistory() {
   let url = '/api/vip/signals?limit=200';
   if (status) url += '&status=' + status;
   if (asset)  url += '&asset='  + asset;
-  const r = await fetch(url).then(r => r.json()).catch(() => ({ signals: [] }));
+  const r = await vipFetch(url).then(r => r.json()).catch(() => ({ signals: [] }));
   const signals = r.signals || [];
   const el = document.getElementById('signalHistory');
   if (!signals.length) {
@@ -992,7 +1039,7 @@ async function submitClose(outcome) {
     return;
   }
   try {
-    const r = await fetch('/api/vip/trades/close', {
+    const r = await vipFetch('/api/vip/trades/close', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ id: closingTradeId, closePrice, outcome }),
     });
@@ -1014,6 +1061,7 @@ function switchTab(tab) {
 
 // ── INIT ──
 (async function init() {
+  updateVipTokenBadge();
   syncScannerSelection();
   await Promise.all([loadSignal(), runScan(), loadTrades()]);
   startCountdown();

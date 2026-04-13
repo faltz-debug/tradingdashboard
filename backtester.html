@@ -880,10 +880,10 @@ const STRATEGIES = {
             <b>Compra:</b> EMA9 &gt; EMA20 &gt; EMA50 + RSI &gt; 55 + breakout das últimas 20 velas + ADX &ge; 25<br>
             <b>Venda:</b> EMA9 &lt; EMA20 &lt; EMA50 + RSI &lt; 45 + breakdown das últimas 20 velas + ADX &ge; 25<br>
             &nbsp;&nbsp;&nbsp;→ Stop = 1.5×ATR &nbsp;|&nbsp; Alvo = 3×ATR &nbsp;|&nbsp; Saída antecipada se o score perder força<br><br>
-            <i>Use esta aba para validar no backtest exatamente a mesma lógica direcional usada pelo servidor ao vivo.</i>
+            <i>Replica o núcleo direcional do servidor e agora também respeita sessão, blackout de notícia e saída só após a vela de entrada.</i>
         `,
         hasSL: true,
-        run(candles) {
+        run(candles, biasCandles, asset) {
             const closes = candles.map(c => c.close);
             const e9 = calcEMA(closes, 9), e20 = calcEMA(closes, 20), e50 = calcEMA(closes, 50);
             const rsi = calcRSI(closes, 14);
@@ -891,6 +891,7 @@ const STRATEGIES = {
             const adx = calcADX(candles, 14);
             const trades = [];
             let inTrade = false, tradeType = '', entryIdx = 0, entryPrice = 0, slPrice = 0, tpPrice = 0;
+            let entryBarIdx = -1;
 
             const getScore = (i) => {
                 const trendSig = e9[i] > e20[i] && e20[i] > e50[i] ? 1 : e9[i] < e20[i] && e20[i] < e50[i] ? -1 : 0;
@@ -907,19 +908,22 @@ const STRATEGIES = {
                 const c = candles[i];
 
                 if (!inTrade) {
+                    if (!isGoodSession(c.time, asset)) continue;
+                    if (isNewsBlackoutTime(c.time)) continue;
                     if (!adx[i] || adx[i] < 25 || !atr[i]) continue;
                     if (score === 3) {
                         entryPrice = c.close;
                         slPrice = entryPrice - 1.5 * atr[i];
                         tpPrice = entryPrice + 3 * atr[i];
-                        inTrade = true; tradeType = 'COMPRA'; entryIdx = i;
+                        inTrade = true; tradeType = 'COMPRA'; entryIdx = i; entryBarIdx = i;
                     } else if (score === -3) {
                         entryPrice = c.close;
                         slPrice = entryPrice + 1.5 * atr[i];
                         tpPrice = entryPrice - 3 * atr[i];
-                        inTrade = true; tradeType = 'VENDA'; entryIdx = i;
+                        inTrade = true; tradeType = 'VENDA'; entryIdx = i; entryBarIdx = i;
                     }
                 } else {
+                    if (i <= entryBarIdx) continue;
                     let exit = false, exitPrice = c.close;
                     const scoreWeak = tradeType === 'COMPRA' ? score <= 0 : score >= 0;
 
@@ -937,6 +941,7 @@ const STRATEGIES = {
                         const pct = tradePct(tradeType, entryPrice, exitPrice);
                         trades.push({ entryIdx, exitIdx: i, entryPrice, exitPrice, pct, win: pct > 0, type: tradeType, sl: slPrice, tp: tpPrice, hasSL: true });
                         inTrade = false;
+                        entryBarIdx = -1;
                     }
                 }
             }

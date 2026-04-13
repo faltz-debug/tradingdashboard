@@ -1208,7 +1208,7 @@ async function getAsset(key) {
   }
 
   // ── Fallback 1: Yahoo Finance (gratuito, sem API key) ─────────────────────
-  if (YAHOO_SYMBOLS[key]) {
+  if (false && YAHOO_SYMBOLS[key]) {
     console.log(`📥 Buscando ${cfg.name} via Yahoo Finance...`);
     try {
       const now  = Date.now();
@@ -1736,8 +1736,8 @@ app.get('/api/health', rateLimit, (req, res) => {
     version:       VERSION,
     twelveDataKey: TWELVE_DATA_KEY === 'COLE_SUA_CHAVE_AQUI' ? '❌ não configurado' : '✅ ok',
     btcFonte:      cache['btc']?.data?.source || 'carregando...',
-    oanda:         OANDA_API_KEY  ? `✅ configurado (${OANDA_PRACTICE ? 'prática' : 'real'})` : 'ℹ️ não configurado (usando Yahoo Finance → Twelve Data)',
-    yahooFinance:  '✅ ativo (fallback gratuito, sem API key)',
+    oanda:         OANDA_API_KEY  ? `✅ configurado (${OANDA_PRACTICE ? 'prática' : 'real'})` : 'ℹ️ não configurado (usando Twelve Data)',
+    yahooFinance:  '⏸ desativado',
     alertInterval: `${ALERT_INTERVAL_MS / 60000} min`,
     ativos:        status,
   });
@@ -1852,8 +1852,7 @@ if (OANDA_API_KEY) {
   setInterval(pollOanda, OANDA_POLL_MS);
 }
 
-// Yahoo Finance polling a cada 5 min (fallback sempre ativo, sem API key)
-setInterval(pollYahoo, 5 * 60 * 1000);
+// Yahoo Finance polling desativado: Twelve Data voltou a ser o fallback principal
 
 // ===== START =====
 app.listen(PORT, async () => {
@@ -1877,9 +1876,8 @@ app.listen(PORT, async () => {
     console.log(`⚡ OANDA_API_KEY detectada — XAU/EUR/JPY em tempo real (${OANDA_PRACTICE ? 'prática' : 'real'})`);
     await pollOanda(); // carrega histórico inicial via REST
   } else {
-    // Sem OANDA: Yahoo Finance como fonte inicial (gratuita)
-    console.log('📊 OANDA não configurado — usando Yahoo Finance para XAU/EUR/JPY...');
-    await pollYahoo();
+    // Sem OANDA: Twelve Data volta a ser a fonte principal para XAU/EUR/JPY.
+    console.log('📥 OANDA não configurado — usando Twelve Data para XAU/EUR/JPY...');
   }
 
   // Carga inicial dos ativos restantes (só se ainda sem dados reais)

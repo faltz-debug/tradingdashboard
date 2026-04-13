@@ -212,7 +212,7 @@
     <div class="header">
         <div>
             <h1>📈 TRADING DASHBOARD PRO v4</h1>
-            <div class="header-meta">Candlestick • EMA • RSI • MACD • Estratégias • Mesa Proprietária &nbsp;|&nbsp; <span style="color:#00d4ff">Build 4.4.1</span></div>
+            <div class="header-meta">Candlestick • EMA • RSI • Breakout • MACD Auxiliar • Mesa Proprietária &nbsp;|&nbsp; <span style="color:#00d4ff">Build 4.4.1</span></div>
         </div>
         <div style="font-size:12px;color:#64748b">
             <span class="status-dot"></span><span id="status-text">Conectando...</span><br>
@@ -321,7 +321,7 @@
         <div id="xau-conf"></div>
 
         <!-- BLOCO 3: ESTRATÉGIAS -->
-        <div class="section-title">🎯 Sinais de Estratégia — Tendência &amp; Momentum</div>
+        <div class="section-title">🎯 Sinais de Estratégia — Núcleo do Motor Ao Vivo</div>
         <div class="strategies-grid" id="xau-strat"></div>
 
         <!-- BLOCO 4: REVERSÃO + S&R + DIVERGÊNCIAS -->
@@ -355,7 +355,7 @@
             <div id="xau-main-chart"></div>
             <div style="padding:8px 16px;font-size:10px;color:#475569;border-top:1px solid #1e3a5f">RSI (14)</div>
             <div id="xau-rsi-chart"></div>
-            <div style="padding:8px 16px;font-size:10px;color:#475569;border-top:1px solid #1e3a5f">MACD (12, 26, 9)</div>
+            <div style="padding:8px 16px;font-size:10px;color:#475569;border-top:1px solid #1e3a5f">MACD Auxiliar (12, 26, 9)</div>
             <div id="xau-macd-chart"></div>
         </div>
         <div class="audit-bar">
@@ -383,7 +383,7 @@
         <div id="btc-conf"></div>
 
         <!-- BLOCO 3: ESTRATÉGIAS -->
-        <div class="section-title">🎯 Sinais de Estratégia — Tendência &amp; Momentum</div>
+        <div class="section-title">🎯 Sinais de Estratégia — Núcleo do Motor Ao Vivo</div>
         <div class="strategies-grid" id="btc-strat"></div>
 
         <!-- BLOCO 4: REVERSÃO + S&R + DIVERGÊNCIAS -->
@@ -417,7 +417,7 @@
             <div id="btc-main-chart"></div>
             <div style="padding:8px 16px;font-size:10px;color:#475569;border-top:1px solid #1e3a5f">RSI (14)</div>
             <div id="btc-rsi-chart"></div>
-            <div style="padding:8px 16px;font-size:10px;color:#475569;border-top:1px solid #1e3a5f">MACD (12, 26, 9)</div>
+            <div style="padding:8px 16px;font-size:10px;color:#475569;border-top:1px solid #1e3a5f">MACD Auxiliar (12, 26, 9)</div>
             <div id="btc-macd-chart"></div>
         </div>
         <div class="audit-bar">
@@ -445,7 +445,7 @@
         <div id="eur-conf"></div>
 
         <!-- BLOCO 3: ESTRATÉGIAS -->
-        <div class="section-title">🎯 Sinais de Estratégia — Tendência &amp; Momentum</div>
+        <div class="section-title">🎯 Sinais de Estratégia — Núcleo do Motor Ao Vivo</div>
         <div class="strategies-grid" id="eur-strat"></div>
 
         <!-- BLOCO 4: REVERSÃO + S&R + DIVERGÊNCIAS -->
@@ -477,7 +477,7 @@
             <div id="eur-main-chart"></div>
             <div style="padding:8px 16px;font-size:10px;color:#475569;border-top:1px solid #1e3a5f">RSI (14)</div>
             <div id="eur-rsi-chart"></div>
-            <div style="padding:8px 16px;font-size:10px;color:#475569;border-top:1px solid #1e3a5f">MACD (12, 26, 9)</div>
+            <div style="padding:8px 16px;font-size:10px;color:#475569;border-top:1px solid #1e3a5f">MACD Auxiliar (12, 26, 9)</div>
             <div id="eur-macd-chart"></div>
         </div>
         <div class="audit-bar">
@@ -505,7 +505,7 @@
         <div id="jpy-conf"></div>
 
         <!-- BLOCO 3: ESTRATÉGIAS -->
-        <div class="section-title">🎯 Sinais de Estratégia — Tendência &amp; Momentum</div>
+        <div class="section-title">🎯 Sinais de Estratégia — Núcleo do Motor Ao Vivo</div>
         <div class="strategies-grid" id="jpy-strat"></div>
 
         <!-- BLOCO 4: REVERSÃO + S&R + DIVERGÊNCIAS -->
@@ -537,7 +537,7 @@
             <div id="jpy-main-chart"></div>
             <div style="padding:8px 16px;font-size:10px;color:#475569;border-top:1px solid #1e3a5f">RSI (14)</div>
             <div id="jpy-rsi-chart"></div>
-            <div style="padding:8px 16px;font-size:10px;color:#475569;border-top:1px solid #1e3a5f">MACD (12, 26, 9)</div>
+            <div style="padding:8px 16px;font-size:10px;color:#475569;border-top:1px solid #1e3a5f">MACD Auxiliar (12, 26, 9)</div>
             <div id="jpy-macd-chart"></div>
         </div>
         <div class="audit-bar">
@@ -1024,7 +1024,7 @@ function renderIndicators(asset) {
             <div class="ind-meta"><b>Status:</b> ${rsiStatus}<br><b>Zona:</b> ${rsiVal > 70 ? '> 70 (Venda)' : rsiVal < 30 ? '< 30 (Compra)' : '30–70 (Neutro)'}</div>
         </div>
         <div class="ind-card">
-            <div class="ind-label">MACD (12,26,9)</div>
+            <div class="ind-label">MACD Auxiliar (12,26,9)</div>
             <div class="ind-value" style="color:${macdColor}">${macdVal.toFixed(dec)}</div>
             <div class="ind-meta"><b>Signal:</b> ${sigVal.toFixed(dec)}<br><b>Histo:</b> ${(macdVal - sigVal).toFixed(dec)}</div>
         </div>
@@ -1051,6 +1051,10 @@ function renderStrategies(asset) {
     const rsi     = ind.rsi;
     const macd    = ind.macdVal;
     const sig     = ind.sigVal;
+    const rsiMomentumSig = rsi > 55 ? 'COMPRA' : rsi < 45 ? 'VENDA' : 'NEUTRO';
+    let rsiMomentumConf  = 35;
+    if (rsi > 55 || rsi < 45) rsiMomentumConf = 65 + Math.min(25, Math.round(Math.abs(rsi - 50)));
+    rsiMomentumConf = Math.min(95, rsiMomentumConf);
     const last5Low   = Math.min(...candles.slice(-5).map(c => c.low));
     const last5High  = Math.max(...candles.slice(-5).map(c => c.high));
 
@@ -1096,13 +1100,13 @@ function renderStrategies(asset) {
             ibSLval = ibMother.low - ibAtr * 0.1;
             ibConf = 60;
             if (adxOkIb) ibConf += 20;
-            if (macd > 0) ibConf += 10;
+            if (rsi > 55) ibConf += 10;
         } else if (brkDown && trendDown) {
             ibSig  = 'VENDA';
             ibSLval = ibMother.high + ibAtr * 0.1;
             ibConf = 60;
             if (adxOkIb) ibConf += 20;
-            if (macd < 0) ibConf += 10;
+            if (rsi < 45) ibConf += 10;
         } else {
             // Inside bar formada mas sem rompimento ainda
             ibSig  = 'AGUARDAR ROMPIMENTO';
@@ -1114,14 +1118,6 @@ function renderStrategies(asset) {
     // Strategy 3: RSI + Bollinger
     const rsiSig  = rsi < 30 ? 'COMPRA' : rsi > 70 ? 'VENDA' : 'NEUTRO';
     const rsiConf = rsi < 30 || rsi > 70 ? Math.round(50 + Math.abs(rsi - 50)) : 35;
-
-    // Strategy 4: MACD crossover
-    const macdSig  = macd > sig ? 'COMPRA' : 'VENDA';
-    let macdConf   = 40;
-    if (Math.abs(macd - sig) > 0) macdConf += 20;
-    if (price > ema20)            macdConf += 15;
-    if (rsi < 70 && rsi > 30)     macdConf += 15;
-    macdConf = Math.min(95, macdConf);
 
     // ─── Breakout (20 períodos — exclui vela atual) ───
     const prevBkCandles = candles.slice(-21, -1);
@@ -1218,7 +1214,7 @@ function renderStrategies(asset) {
     const trendSL  = trendSig==='COMPRA' ? ema50 : trendSig==='VENDA' ? ema50 : null;
     // ibSLval já calculado na lógica do Inside Bar acima
     const rsiSLval = rsiSig==='COMPRA' ? last5Low : rsiSig==='VENDA' ? last5High : null;
-    const macdSLval= macdSig==='COMPRA' ? Math.min(ema20, last5Low) : Math.max(ema20, last5High);
+    const rsiMomentumSLval = rsiMomentumSig==='COMPRA' ? Math.min(ema20, last5Low) : rsiMomentumSig==='VENDA' ? Math.max(ema20, last5High) : null;
     const bkSLval  = bkSig==='COMPRA' ? last5Low : bkSig==='VENDA' ? last5High : null;
 
     document.getElementById(asset + '-strat').innerHTML =
@@ -1236,9 +1232,11 @@ function renderStrategies(asset) {
             ['Tendência EMA', ema9 > ema50 ? '📈 Alta (EMA9 > EMA50)' : ema9 < ema50 ? '📉 Baixa (EMA9 < EMA50)' : '↔️ Lateral']
         ], ibSig, ibConf, ibSLval ? entryBlock(ibSig, price, ibSLval) : '') +
 
-        card('⚙️ MACD Crossover (12,26,9)', [
-            ['MACD', macd.toFixed(dec)], ['Signal', sig.toFixed(dec)], ['Histograma', (macd-sig).toFixed(dec)]
-        ], macdSig, macdConf, entryBlock(macdSig, price, macdSLval)) +
+        card('📊 RSI Momentum (55/45)', [
+            ['RSI atual', rsi.toFixed(1)],
+            ['Zona', rsi > 55 ? 'Impulso comprador' : rsi < 45 ? 'Impulso vendedor' : 'Faixa neutra'],
+            ['Confirmação', rsiMomentumSig === 'COMPRA' ? 'RSI > 55' : rsiMomentumSig === 'VENDA' ? 'RSI < 45' : 'Aguardando saída da faixa 45–55']
+        ], rsiMomentumSig, rsiMomentumConf, rsiMomentumSLval ? entryBlock(rsiMomentumSig, price, rsiMomentumSLval) : '') +
 
         card('🚀 Breakout (20 períodos)', [
             ['Máxima 20 velas', fmt(bkHigh)],
@@ -1327,12 +1325,11 @@ function renderStrategies(asset) {
     const { adx: adxVal, pdi: pdiVal, mdi: mdiVal, adxOk, adxTrend: adxTrendLabel } = ind;
     const sessStatus = getSessionStatus(asset);
 
-    // ─── Master Signal — consenso das 3 estratégias de tendência ───
-    // EMA Crossover removido do score: é redundante com EMA Trend (ema9>ema20 implica ambos)
-    // RSI removido — vai para painel Reversão
+    // ─── Master Signal — consenso do mesmo núcleo usado no servidor ───
+    // EMA Trend + RSI Momentum + Breakout
     const signalMap  = { 'COMPRA': 1, 'VENDA': -1, 'TENDÊNCIA ↑': 1, 'TENDÊNCIA ↓': -1 };
     const cleanBkSig = bkSig.replace(/ [↑↓]/g, '').trim();
-    const allSigs    = [trendSig, macdSig, cleanBkSig];
+    const allSigs    = [trendSig, rsiMomentumSig, cleanBkSig];
     const score      = allSigs.map(s => signalMap[s] || 0).reduce((a, b) => a + b, 0);
 
     // Score máx = 3: ≥3 → FORTE, ==2 → MODERADA, ≤1 → NEUTRO
@@ -1351,7 +1348,7 @@ function renderStrategies(asset) {
                       : score <= -3 ? 'rgba(255,51,85,0.07)'  : score === -2 ? 'rgba(255,136,0,0.07)'
                       : 'rgba(100,116,139,0.06)';
 
-    const sigNames = ['EMA Tendência', 'MACD', 'Breakout'];
+    const sigNames = ['EMA Tendência', 'RSI Momentum', 'Breakout'];
     const bars = allSigs.map((s, i) => {
         const col  = s === 'COMPRA' ? '#00ff41' : s === 'VENDA' ? '#ff3355' : '#475569';
         const icon = s === 'COMPRA' ? '▲' : s === 'VENDA' ? '▼' : '—';
@@ -1381,13 +1378,13 @@ function renderStrategies(asset) {
                 <div style="font-size:9px;color:#475569;margin-top:10px">⚠️ Indicativo — confirme sempre no MetaTrader antes de operar</div>
             </div>
             <div style="background:#070b14;border:1px solid #1e3a5f;border-radius:12px;padding:18px 22px;min-width:200px">
-                <div style="font-size:12px;color:#64748b;text-transform:uppercase;margin-bottom:14px;letter-spacing:1px">Votos por estratégia</div>
+                <div style="font-size:12px;color:#64748b;text-transform:uppercase;margin-bottom:14px;letter-spacing:1px">Votos do motor ao vivo</div>
                 ${bars}
                 <div style="border-top:1px solid #1e3a5f;margin-top:12px;padding-top:10px;font-size:11px;color:#475569">
                     Score: <b style="color:${masterColor};font-size:13px">${score > 0 ? '+' : ''}${score}</b> <span style="font-size:10px">(escala −3 a +3)</span>
                 </div>
                 <div style="margin-top:8px;font-size:10px;color:#475569;border-top:1px solid #1e3a5f;padding-top:8px">
-                    🔄 RSI + Bollinger → painel <span style="color:#ff8c00">Reversão</span> abaixo
+                    🔄 RSI extremo + Bollinger → painel <span style="color:#ff8c00">Reversão</span> abaixo • MACD fica só como apoio visual
                 </div>
             </div>
         </div>
@@ -1419,15 +1416,15 @@ function renderConfluence(asset) {
         const e20    = calcEMA(closes, 20)[last];
         const e50    = calcEMA(closes, 50)[last];
         const rsiVal = calcRSI(closes, 14)[last];
-        const { macdLine, signalLine } = calcMACD(closes);
-        const macdVal = macdLine[last], sigVal = signalLine[last];
-
         const emaDir  = e9 > e20 && e20 > e50 ? 'ALTA' : e9 < e20 && e20 < e50 ? 'BAIXA' : 'NEUTRO';
         const rsiDir  = rsiVal > 58 ? 'ALTA' : rsiVal < 42 ? 'BAIXA' : 'NEUTRO';
-        const macdDir = macdVal > sigVal ? 'ALTA' : 'BAIXA';
+        const prevCandles = candles.slice(Math.max(0, last - 20), last);
+        const high20 = prevCandles.length ? Math.max(...prevCandles.map(c => c.high)) : closes[last];
+        const low20  = prevCandles.length ? Math.min(...prevCandles.map(c => c.low))  : closes[last];
+        const breakoutDir = closes[last] > high20 ? 'ALTA' : closes[last] < low20 ? 'BAIXA' : 'NEUTRO';
 
-        const bulls = [emaDir, rsiDir, macdDir].filter(d => d === 'ALTA').length;
-        const bears = [emaDir, rsiDir, macdDir].filter(d => d === 'BAIXA').length;
+        const bulls = [emaDir, rsiDir, breakoutDir].filter(d => d === 'ALTA').length;
+        const bears = [emaDir, rsiDir, breakoutDir].filter(d => d === 'BAIXA').length;
         const score = bulls - bears;
 
         if (score > 0) bullTF++; else if (score < 0) bearTF++;
@@ -1441,7 +1438,7 @@ function renderConfluence(asset) {
             <td style="padding:11px 14px;font-weight:700;color:#00d4ff;font-size:14px">${tfLabel[tf]}</td>
             <td style="padding:11px 14px;color:${col(emaDir)};font-size:13px;font-weight:600">${icon(emaDir)} ${emaDir}</td>
             <td style="padding:11px 14px;color:${col(rsiDir)};font-size:13px;font-weight:600">${icon(rsiDir)} ${rsiVal?.toFixed(0) ?? '—'}</td>
-            <td style="padding:11px 14px;color:${col(macdDir)};font-size:13px;font-weight:600">${icon(macdDir)} ${macdDir}</td>
+            <td style="padding:11px 14px;color:${col(breakoutDir)};font-size:13px;font-weight:600">${icon(breakoutDir)} ${breakoutDir}</td>
             <td style="padding:11px 14px;text-align:center;font-size:20px">${badge}</td>
         </tr>`;
     }).filter(Boolean).join('');
@@ -1458,7 +1455,7 @@ function renderConfluence(asset) {
     el.innerHTML = `
     <div style="background:#0d1526;border:1px solid #1e3a5f;border-radius:10px;overflow:hidden;margin-bottom:20px">
         <div style="padding:12px 16px;border-bottom:1px solid #1e3a5f;background:#070b14;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-            <span style="color:#00d4ff;font-weight:700;font-size:16px;text-transform:uppercase;letter-spacing:1px">🔀 Confluência Multi-Timeframe</span>
+            <span style="color:#00d4ff;font-weight:700;font-size:16px;text-transform:uppercase;letter-spacing:1px">🔀 Confluência Multi-Timeframe do Motor</span>
             <span style="font-size:14px;font-weight:700;color:${vCol}">${verdict}</span>
         </div>
         <table style="width:100%;border-collapse:collapse;font-size:13px">
@@ -1466,7 +1463,7 @@ function renderConfluence(asset) {
                 <th style="padding:10px 14px;text-align:left;color:#94a3b8;text-transform:uppercase;font-weight:700">Timeframe</th>
                 <th style="padding:10px 14px;text-align:left;color:#94a3b8;text-transform:uppercase;font-weight:700">EMA (9/20/50)</th>
                 <th style="padding:10px 14px;text-align:left;color:#94a3b8;text-transform:uppercase;font-weight:700">RSI (14)</th>
-                <th style="padding:10px 14px;text-align:left;color:#94a3b8;text-transform:uppercase;font-weight:700">MACD</th>
+                <th style="padding:10px 14px;text-align:left;color:#94a3b8;text-transform:uppercase;font-weight:700">Breakout 20</th>
                 <th style="padding:10px 14px;text-align:center;color:#94a3b8;text-transform:uppercase;font-weight:700">Sinal</th>
             </tr></thead>
             <tbody>${rows || '<tr><td colspan="5" style="padding:16px;text-align:center;color:#475569">Aguardando dados suficientes (mín. 55 velas por TF)</td></tr>'}</tbody>
@@ -1795,7 +1792,7 @@ function renderAnalysis(asset) {
                 📖 <b style="color:#94a3b8">Como ler:</b><br>
                 🟢 <b>Bullish:</b> Preço faz mínimo mais baixo, indicador faz mínimo mais alto → reversão de alta<br>
                 🔴 <b>Bearish:</b> Preço faz máximo mais alto, indicador faz máximo mais baixo → reversão de baixa<br>
-                ⚡ Divergência RSI + MACD juntas = sinal muito forte
+                ⚡ RSI é o gatilho principal de reversão; MACD aqui atua como confirmação auxiliar
             </div>
         </div>
     </div>`;
@@ -1980,7 +1977,8 @@ function updateDataSourceBanner() {
         // Tudo real e aberto
         banner.className = 'real';
         icon.textContent = '✅';
-        text.textContent = `Dados REAIS — Twelve Data — ${realAssets.join(' · ')}`;
+        const sourceByAsset = loaded.map(a => `${a.data.asset || '?'}: ${a.data.source || 'Fonte não informada'}`);
+        text.textContent = `Dados REAIS — ${sourceByAsset.join(' | ')}`;
         document.querySelector('.status-dot').style.background = '#00ff41';
     }
 }
@@ -2009,7 +2007,7 @@ function updateSignalBanner() {
     // As funções calcEMA/calcRSI/calcMACD ficam apenas para renderizar os gráficos.
     // O score/masterLabel/confluência vem de data.signals (computeSignals do server.js).
     const LABELS   = { xau:'XAUUSD', btc:'BTC/USD', eur:'EURUSD', jpy:'USDJPY' };
-    const TF_MAP   = { '15m':'15m', '1h':'1h', '4h':'4h', 'daily':'15m' }; // mapeia TF da aba para chave do signals
+    const TF_MAP   = { '15m':'15m', '1h':'1h', '4h':'4h', 'daily':'daily' }; // mapeia TF da aba para chave do signals
 
     ['xau','btc','eur','jpy'].forEach(asset => {
         const d  = state[asset].data;
@@ -2025,10 +2023,11 @@ function updateSignalBanner() {
             const { e9, e20, fmt, price, rsi } = ind;
             const aligned = e9 > e20;
             const col = aligned ? '#00d4ff' : '#ff3355';
+            const missingTf = state[asset].tf === 'daily' && !d.signals?.daily;
             document.getElementById('signal-'+asset+'-banner').innerHTML =
                 `<div style="background:rgba(30,58,95,0.3);border:1px solid #1e3a5f;border-radius:8px;padding:10px 14px">
                     <div style="font-size:11px;color:#64748b;margin-bottom:4px">${LABELS[asset]} — ${state[asset].tf.toUpperCase()}</div>
-                    <div style="font-size:14px;font-weight:700;color:#64748b">⏸ ${d.isMarketClosed ? 'MERCADO FECHADO' : 'AGUARDAR'}</div>
+                    <div style="font-size:14px;font-weight:700;color:#64748b">⏸ ${missingTf ? 'SINAL DAILY INDISPONÍVEL' : d.isMarketClosed ? 'MERCADO FECHADO' : 'AGUARDAR'}</div>
                     <div style="font-size:10px;color:#475569;margin-top:4px">RSI: ${rsi?.toFixed(0) ?? '—'} &nbsp;|&nbsp; Preço: ${fmt(price)}</div>
                 </div>`;
             return;
