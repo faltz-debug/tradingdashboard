@@ -594,17 +594,18 @@ function computeSignals(candles15m, assetName, dec, tf = '15M') {
   // Master Signal: EMA Trend (direção) + RSI Momentum (força) + Breakout (nível)
   // MACD removido: zero edge comprovado (14.3M backtests). RSI tem WR 60-65% validado.
   const sigMap = { 'COMPRA': 1, 'VENDA': -1 };
-  const score  = [trendSig, rsiTrendSig, bkSig].map(s => sigMap[s] || 0).reduce((a, b) => a + b, 0);
+  const rawScore = [trendSig, rsiTrendSig, bkSig].map(s => sigMap[s] || 0).reduce((a, b) => a + b, 0);
 
   // RSI + Bollinger (Reversão)
   const rsiSig = rsi < 30 ? 'COMPRA' : rsi > 70 ? 'VENDA' : 'NEUTRO';
   const rsiReversalAlert = (rsi < 30 && price <= bb.lower) || (rsi > 70 && price >= bb.upper);
 
   // Score máx = 3: ≥3 → FORTE, ==2 → MODERADA, ≤1 → NEUTRO
-  const masterLabel = score >= 3 ? 'FORTE COMPRA' : score === 2 ? 'COMPRA MODERADA'
+  let score = rawScore;
+  let masterLabel = score >= 3 ? 'FORTE COMPRA' : score === 2 ? 'COMPRA MODERADA'
                     : score <= -3 ? 'FORTE VENDA' : score === -2 ? 'VENDA MODERADA' : 'NEUTRO';
 
-  const masterEmoji = score >= 3 ? '🟢' : score === 2 ? '🟡'
+  let masterEmoji = score >= 3 ? '🟢' : score === 2 ? '🟡'
                     : score <= -3 ? '🔴' : score === -2 ? '🟠' : '⚪';
 
   // ATR-based Entry / SL / TP
@@ -625,11 +626,17 @@ function computeSignals(candles15m, assetName, dec, tf = '15M') {
   const adxDir      = pdi > mdi ? '↑' : '↓';
 
   // S/R + Divergência
+  if (!adxOk) {
+    score = rawScore > 0 ? 1 : rawScore < 0 ? -1 : 0;
+    masterLabel = score > 0 ? 'COMPRA FRACA (LATERAL)' : score < 0 ? 'VENDA FRACA (LATERAL)' : 'NEUTRO';
+    masterEmoji = score > 0 ? '🟡' : score < 0 ? '🟠' : '⚪';
+  }
+
   const sr = calcSupportResistance(candles15m);
   const div = detectDivergence(candles15m);
 
   return {
-    asset: assetName, price, dec, score, masterLabel, masterEmoji, tf,
+    asset: assetName, price, dec, score, rawScore, masterLabel, masterEmoji, tf,
     trendSig, emaSig, rsiTrendSig, bkSig,
     rsi, rsiSig, rsiReversalAlert, bb,
     atr, entry, sl, tp, tfConfluence: [tf],
@@ -1063,6 +1070,79 @@ async function fetchFromTwelveData(symbol) {
   };
 }
 
+// ===== YAHOO FINANCE — FALLBACK GRATUITO (sem API key) =====
+// Cobre XAU/USD, EUR/USD, USD/JPY e BTC sem nenhuma autenticação.
+// Yahoo não tem rate limit público razoável para polling a cada 5min.
+const YAHOO_SYMBOLS = {
+  xauusd: 'XAUUSD=X',
+  eurusd: 'EURUSD=X',
+  usdjpy: 'USDJPY=X',
+  btc:    'BTC-USD',
+};
+
+async function fetchFromYahoo(assetKey) {
+  const symbol = YAHOO_SYMBOLS[assetKey];
+  if (!symbol) throw new Error(`Yahoo: símbolo não mapeado para ${assetKey}`);
+
+  const res = await axios.get(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}`, {
+    params:  { interval: '15m', range: '5d' },
+    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; TradingDashboard/1.0)' },
+    timeout: 12000,
+  });
+
+  const chart = res.data?.chart?.result?.[0];
+  if (!chart) throw new Error('Yahoo: sem dados na resposta');
+
+  const timestamps = chart.timestamp;
+  const quotes     = chart.indicators?.quote?.[0];
+  if (!timestamps?.length || !quotes) throw new Error('Yahoo: estrutura de dados inválida');
+
+  const intervalMs = 15 * 60 * 1000;
+  const now        = Date.now();
+
+  const all = timestamps
+    .map((t, i) => ({
+      time:  t,
+      open:  quotes.open[i],
+      high:  quotes.high[i],
+      low:   quotes.low[i],
+      close: quotes.close[i],
+    }))
+    .filter(c => c.open !== null && c.high !== null && c.low !== null && c.close !== null)
+    .filter(c => ((c.time * 1000) + intervalMs) <= now);
+
+  if (all.length < 10) throw new Error('Yahoo: dados insuficientes');
+
+  return {
+    success:      true,
+    source:       '📊 Yahoo Finance',
+    isSimulation: false,
+    isRealTime:   false,
+    price:        all[all.length - 1].close,
+    '15m':        all.slice(-500),
+    '1h':         agregateCandles(all, 3600),
+    '4h':         agregateCandles(all, 14400),
+    'daily':      agregateCandles(all, 86400),
+  };
+}
+
+async function pollYahoo() {
+  for (const key of ['xauusd', 'eurusd', 'usdjpy']) {
+    if (!isMarketOpen(key)) continue;
+    // Não substitui cache real-time (OANDA) ainda válido
+    if (cache[key].data?.isRealTime && cache[key].updatedAt && (Date.now() - cache[key].updatedAt) < 5 * 60 * 1000) continue;
+    try {
+      const cfg  = ASSETS[key];
+      const now  = Date.now();
+      const data = { ...await fetchFromYahoo(key), asset: cfg.name, updatedAt: now, nextUpdateAt: now + 5 * 60 * 1000 };
+      cache[key] = { data, updatedAt: now };
+      console.log(`📊 Yahoo ${cfg.name}: ${data.price.toFixed(cfg.decimals)}`);
+    } catch (e) {
+      console.log(`⚠️  Yahoo poll ${key}: ${e.message}`);
+    }
+  }
+}
+
 // ===== FALLBACK =====
 function generateFallback(basePrice, vol, dec) {
   const candles = []; let price = basePrice;
@@ -1127,7 +1207,21 @@ async function getAsset(key) {
     }
   }
 
-  // ── Fallback: Twelve Data ─────────────────────────────────────────────────
+  // ── Fallback 1: Yahoo Finance (gratuito, sem API key) ─────────────────────
+  if (YAHOO_SYMBOLS[key]) {
+    console.log(`📥 Buscando ${cfg.name} via Yahoo Finance...`);
+    try {
+      const now  = Date.now();
+      const data = { ...await fetchFromYahoo(key), asset: cfg.name, updatedAt: now, nextUpdateAt: now + CACHE_TTL_MS };
+      cache[key] = { data, updatedAt: now };
+      console.log(`✅ ${cfg.name}: ${data.price.toFixed(cfg.decimals)} [Yahoo Finance]`);
+      return data;
+    } catch (yahooErr) {
+      console.log(`⚠️  Yahoo ${key}: ${yahooErr.message} — tentando Twelve Data...`);
+    }
+  }
+
+  // ── Fallback 2: Twelve Data ───────────────────────────────────────────────
   console.log(`📥 Buscando ${cfg.name} via Twelve Data...`);
   try {
     const now  = Date.now();
@@ -1210,9 +1304,10 @@ function attachSignals(data, key) {
   const cfg = ASSETS[key];
   if (data.isSimulation || data.isMarketClosed || !data['15m']?.length) return data;
   try {
-    const s15 = computeSignals(data['15m'], cfg.name, cfg.decimals, '15M');
-    const s1h  = data['1h']?.length  >= 20 ? computeSignals(data['1h'],  cfg.name, cfg.decimals, '1H')  : null;
-    const s4h  = data['4h']?.length  >= 10 ? computeSignals(data['4h'],  cfg.name, cfg.decimals, '4H')  : null;
+    const s15   = computeSignals(data['15m'], cfg.name, cfg.decimals, '15M');
+    const s1h   = data['1h']?.length    >= 20 ? computeSignals(data['1h'],    cfg.name, cfg.decimals, '1H')    : null;
+    const s4h   = data['4h']?.length    >= 10 ? computeSignals(data['4h'],    cfg.name, cfg.decimals, '4H')    : null;
+    const sDaily= data['daily']?.length >= 10 ? computeSignals(data['daily'], cfg.name, cfg.decimals, 'DAILY') : null;
 
     // Detecta confluência de timeframes (mesmo sinal que o 15M)
     const dir = Math.sign(s15.score);
@@ -1224,6 +1319,7 @@ function attachSignals(data, key) {
       '15m': { ...s15, tfConfluence: confluence },
       '1h':  s1h,
       '4h':  s4h,
+      'daily': sDaily,
     };
   } catch (e) {
     console.log(`⚠️  attachSignals ${key}:`, e.message);
@@ -1640,7 +1736,8 @@ app.get('/api/health', rateLimit, (req, res) => {
     version:       VERSION,
     twelveDataKey: TWELVE_DATA_KEY === 'COLE_SUA_CHAVE_AQUI' ? '❌ não configurado' : '✅ ok',
     btcFonte:      cache['btc']?.data?.source || 'carregando...',
-    oanda:         OANDA_API_KEY  ? `✅ configurado (${OANDA_PRACTICE ? 'prática' : 'real'})` : 'ℹ️ não configurado (usando Twelve Data)',
+    oanda:         OANDA_API_KEY  ? `✅ configurado (${OANDA_PRACTICE ? 'prática' : 'real'})` : 'ℹ️ não configurado (usando Yahoo Finance → Twelve Data)',
+    yahooFinance:  '✅ ativo (fallback gratuito, sem API key)',
     alertInterval: `${ALERT_INTERVAL_MS / 60000} min`,
     ativos:        status,
   });
@@ -1724,9 +1821,9 @@ app.get('/api/analysis/:asset', rateLimit, async (req, res) => {
 });
 
 // ===== AUTO-REFRESH + ALERTAS =====
-// Com fontes real-time ativas, o ciclo roda a cada 2 min para processar alertas
-// sem esperar 15 min. getAsset() retorna do cache se real-time estiver fresco.
-const ALERT_INTERVAL_MS = OANDA_API_KEY ? 2 * 60 * 1000 : CACHE_TTL_MS;
+// Com fontes real-time ativas, o ciclo roda a cada 5 min para processar alertas.
+// Yahoo Finance (sempre disponível) mantém ciclos de 5 min; OANDA mantém 2 min.
+const ALERT_INTERVAL_MS = OANDA_API_KEY ? 2 * 60 * 1000 : 5 * 60 * 1000;
 
 setInterval(async () => {
   for (const key of Object.keys(ASSETS)) {
@@ -1755,6 +1852,9 @@ if (OANDA_API_KEY) {
   setInterval(pollOanda, OANDA_POLL_MS);
 }
 
+// Yahoo Finance polling a cada 5 min (fallback sempre ativo, sem API key)
+setInterval(pollYahoo, 5 * 60 * 1000);
+
 // ===== START =====
 app.listen(PORT, async () => {
   console.log(`\n╔══════════════════════════════════════════╗`);
@@ -1775,12 +1875,16 @@ app.listen(PORT, async () => {
   // ── OANDA (XAU/EUR/JPY) ─────────────────────────────────────────────────
   if (OANDA_API_KEY) {
     console.log(`⚡ OANDA_API_KEY detectada — XAU/EUR/JPY em tempo real (${OANDA_PRACTICE ? 'prática' : 'real'})`);
-    await pollOanda(); // carga inicial imediata
+    await pollOanda(); // carrega histórico inicial via REST
   } else {
-    console.log('ℹ️  OANDA_API_KEY não configurada — XAU/EUR/JPY usará Twelve Data (15min)');
-    console.log('   Para ativar: adicione OANDA_API_KEY=seu_token no .env\n');
-    console.log('📥 Carregando ativos via Twelve Data...\n');
-    for (const key of Object.keys(ASSETS).filter(k => k !== 'btc')) {
+    // Sem OANDA: Yahoo Finance como fonte inicial (gratuita)
+    console.log('📊 OANDA não configurado — usando Yahoo Finance para XAU/EUR/JPY...');
+    await pollYahoo();
+  }
+
+  // Carga inicial dos ativos restantes (só se ainda sem dados reais)
+  for (const key of Object.keys(ASSETS).filter(k => k !== 'btc')) {
+    if (!cache[key].data || cache[key].data.isSimulation) {
       getAsset(key).catch(e => console.log(`⚠️  ${key}: ${e.message}`));
     }
   }
