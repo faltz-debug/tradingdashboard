@@ -658,6 +658,27 @@ function getCostPct(asset) {
     return (COST_PRESETS[activeCostPreset]?.[asset] ?? 0.02);
 }
 
+// ─── ASSET TAB SWITCH ───
+function switchTab(asset, btn) {
+    // Atualiza botões de ativo
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+
+    // Mostra o tab correto
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    const tab = document.getElementById('tab-' + asset);
+    if (tab) tab.classList.add('active');
+
+    // Executa backtest se houver dados
+    if (assetData[asset]) {
+        const stratBtn = document.querySelector(`#tab-${asset} .strat-btn.active`);
+        if (stratBtn) runBacktest(asset, activeStrat[asset], stratBtn);
+    } else {
+        // Tenta buscar dados novamente se não tiver
+        fetchData();
+    }
+}
+
 function switchBtTF(asset, tf, btn) {
     activeTF[asset] = tf;
     btn.closest('.tf-selector').querySelectorAll('.tf-btn-bt').forEach(b => b.classList.remove('active'));
