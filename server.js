@@ -597,6 +597,56 @@ function detectDivergence(candles, period = 14) {
   };
 }
 
+function classifyMasterScore(score) {
+  if (score >= 3) return 'FORTE COMPRA';
+  if (score === 2) return 'COMPRA MODERADA';
+  if (score <= -3) return 'FORTE VENDA';
+  if (score === -2) return 'VENDA MODERADA';
+  return 'NEUTRO';
+}
+
+function buildSignalAudit(signal, assetKey) {
+  const sessionInfo = getSessionInfo(assetKey);
+  const newsInfo = getNewsStatus(assetKey);
+  const votes = [
+    { key: 'trend', name: 'EMA Tendência', signal: signal.trendSig },
+    { key: 'momentum', name: 'RSI Momentum', signal: signal.rsiTrendSig },
+    { key: 'breakout', name: 'Breakout 20', signal: signal.bkSig },
+  ];
+  const blockers = [];
+  if (!signal.adxOk) blockers.push(`ADX baixo (${signal.adx.toFixed(1)})`);
+  if (!sessionInfo.isGood) blockers.push(`Fora da sessão ideal (${sessionInfo.sessionStr})`);
+  if (newsInfo.isNearNews) blockers.push(`Notícia próxima: ${newsInfo.nearName || 'alto impacto'}`);
+  if (signal.bkSig === 'AGUARDAR') blockers.push('Sem breakout confirmado');
+  if (signal.rsiTrendSig === 'NEUTRO') blockers.push(`RSI neutro (${signal.rsi.toFixed(1)})`);
+  if (signal.trendSig === 'NEUTRO') blockers.push('EMAs sem alinhamento');
+
+  return {
+    regime: signal.adx >= 40 ? 'TREND_FORTE'
+      : signal.adx >= 25 ? 'TREND_MODERADA'
+      : signal.adx >= 15 ? 'TREND_FRACA'
+      : 'LATERAL',
+    scoreBeforeAdx: signal.rawScore,
+    scoreAfterAdx: signal.score,
+    labelBeforeAdx: classifyMasterScore(signal.rawScore),
+    labelAfterAdx: signal.masterLabel,
+    votes,
+    bullishVotes: votes.filter(v => v.signal === 'COMPRA').map(v => v.name),
+    bearishVotes: votes.filter(v => v.signal === 'VENDA').map(v => v.name),
+    neutralVotes: votes.filter(v => !['COMPRA', 'VENDA'].includes(v.signal)).map(v => v.name),
+    session: {
+      isGood: sessionInfo.isGood,
+      label: sessionInfo.sessionStr,
+    },
+    news: {
+      isBlocked: newsInfo.isNearNews,
+      name: newsInfo.nearName,
+      time: newsInfo.nearTimeStr,
+    },
+    blockers,
+  };
+}
+
 function computeSignals(candles15m, assetName, dec, tf = '15M') {
   const closes = candles15m.map(c => c.close);
   const last   = closes.length - 1;
@@ -671,8 +721,8 @@ function computeSignals(candles15m, assetName, dec, tf = '15M') {
 
   const sr = calcSupportResistance(candles15m);
   const div = detectDivergence(candles15m);
-
-  return {
+  const assetKey = Object.entries(ASSETS).find(([, cfg]) => cfg.name === assetName)?.[0] || null;
+  const signal = {
     asset: assetName, price, dec, score, rawScore, masterLabel, masterEmoji, tf,
     trendSig, emaSig, rsiTrendSig, bkSig,
     rsi, rsiSig, rsiReversalAlert, bb,
@@ -680,6 +730,9 @@ function computeSignals(candles15m, assetName, dec, tf = '15M') {
     adx, pdi, mdi, adxTrend, adxOk, adxDir,
     sr, div
   };
+  if (assetKey) signal.audit = buildSignalAudit(signal, assetKey);
+
+  return signal;
 }
 
 function fmt(v, dec) {
@@ -718,6 +771,13 @@ function buildTelegramMessage(s, sessionInfo, newsInfo) {
   msg += `  EMA Tendência : ${s.trendSig === 'COMPRA' ? '🟢' : s.trendSig === 'VENDA' ? '🔴' : '⚪'} ${s.trendSig}\n`;
   msg += `  RSI Momentum  : ${s.rsiTrendSig === 'COMPRA' ? '🟢' : s.rsiTrendSig === 'VENDA' ? '🔴' : '⚪'} ${s.rsiTrendSig} (RSI ${s.rsi.toFixed(1)})\n`;
   msg += `  Breakout      : ${s.bkSig === 'COMPRA' ? '🟢' : s.bkSig === 'VENDA' ? '🔴' : '⚪'} ${s.bkSig}\n`;
+  if (s.audit) {
+    const blockers = s.audit.blockers.length ? s.audit.blockers.join(' | ') : 'Nenhum bloqueio crítico';
+    msg += `\n🔎 <b>Auditoria:</b>\n`;
+    msg += `  Regime: ${s.audit.regime} | Score bruto: ${s.audit.scoreBeforeAdx > 0 ? '+' : ''}${s.audit.scoreBeforeAdx} | Final: ${s.audit.scoreAfterAdx > 0 ? '+' : ''}${s.audit.scoreAfterAdx}\n`;
+    msg += `  Sessão: ${s.audit.session.label} | News: ${s.audit.news.isBlocked ? 'BLOQUEADA' : 'LIVRE'}\n`;
+    msg += `  Bloqueios: ${blockers}\n`;
+  }
 
   // Níveis de operação
   if (s.sl !== null) {

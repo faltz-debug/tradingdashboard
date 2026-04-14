@@ -2043,6 +2043,10 @@ function updateSignalBanner() {
         const fmt   = ind?.fmt || (v => v.toFixed(2));
         const rsi   = srv.rsi;
         const price = srv.price;
+        const audit = srv.audit || null;
+        const auditText = audit
+            ? `${audit.regime} • ${audit.session?.label || '—'} • ${audit.news?.isBlocked ? 'news bloqueada' : 'news livre'}`
+            : 'Auditoria indisponível';
 
         // Confluência de timeframes
         const conf  = srv.tfConfluence || ['15M'];
@@ -2062,6 +2066,7 @@ function updateSignalBanner() {
                 <div style="font-size:10px;color:#475569;margin-top:4px">
                     Score: ${score > 0 ? '+' : ''}${score}/3 &nbsp;|&nbsp; RSI: ${rsi?.toFixed(0) ?? '—'} &nbsp;|&nbsp; Preço: ${fmt(price)}
                 </div>
+                <div style="font-size:10px;color:#64748b;margin-top:4px">${auditText}</div>
             </div>`;
 
         // Notificação browser se sinal mudou
