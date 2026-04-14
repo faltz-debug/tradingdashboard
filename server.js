@@ -8,13 +8,28 @@ const WebSocket = require('ws');
 
 const app = express();
 
-// CORS: em produção, troque '*' pelo domínio real do seu frontend
-// Ex: origin: 'https://meusite.com'
-const ALLOWED_ORIGIN = process.env.FRONTEND_ORIGIN || '*';
+// CORS: aceita o domínio do Railway + localhost para desenvolvimento
+const ALLOWED_ORIGINS = (process.env.FRONTEND_ORIGIN || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+
 app.use(cors({
-  origin: ALLOWED_ORIGIN,
+  origin: function(origin, callback) {
+    // Permite requisições sem origin (curl, mobile, Postman, server-to-server)
+    if (!origin) return callback(null, true);
+    // Permite localhost para desenvolvimento
+    if (origin.includes('localhost') || origin.includes('127.0.0.1')) return callback(null, true);
+    // Permite domínio Railway (*.up.railway.app)
+    if (origin.endsWith('.up.railway.app')) return callback(null, true);
+    // Permite origens configuradas via FRONTEND_ORIGIN
+    if (ALLOWED_ORIGINS.length === 0 || ALLOWED_ORIGINS.includes('*') || ALLOWED_ORIGINS.includes(origin)) {
+      return callback(null, true);
+    }
+    callback(new Error('Blocked by CORS'));
+  },
   methods: ['GET', 'POST'],
-  allowedHeaders: ['Content-Type']
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 app.use(express.json());
@@ -96,15 +111,29 @@ function loadLastSignals() {
   return {};
 }
 
-// Salva estado no disco após cada atualização (async + debounce para não bloquear o event loop)
+// Salva estado no disco com atomic write (temp file + rename)
+// Evita corrupção se o processo crashar durante a escrita
 let _saveTimer = null;
+let _saveInProgress = false;
 function saveLastSignals() {
   if (_saveTimer) clearTimeout(_saveTimer);
   _saveTimer = setTimeout(() => {
-    fs.writeFile(SIGNALS_FILE, JSON.stringify(lastSignals, null, 2), (err) => {
-      if (err) console.log('⚠️  Erro ao salvar lastSignals.json:', err.message);
+    if (_saveInProgress) return; // evita escritas sobrepostas
+    _saveInProgress = true;
+    const tmpFile = SIGNALS_FILE + '.tmp';
+    const data = JSON.stringify(lastSignals, null, 2);
+    fs.writeFile(tmpFile, data, (err) => {
+      if (err) {
+        console.log('⚠️  Erro ao salvar lastSignals.json:', err.message);
+        _saveInProgress = false;
+        return;
+      }
+      fs.rename(tmpFile, SIGNALS_FILE, (renameErr) => {
+        if (renameErr) console.log('⚠️  Erro ao renomear lastSignals.tmp:', renameErr.message);
+        _saveInProgress = false;
+      });
     });
-  }, 500); // debounce 500ms — evita escritas excessivas em rajada
+  }, 300);
 }
 
 // Guarda o último sinal enviado por ativo (evita mensagens repetidas)
@@ -153,7 +182,7 @@ function calcRSI(closes, period = 14) {
 }
 
 function calcMACD(closes) {
-  // Precisa do array completo de EMA para calcular a signal line corretamente
+  // MACD Line = EMA(12) - EMA(26)
   const k12 = 2 / 13, k26 = 2 / 27;
   let ema12 = closes[0], ema26 = closes[0];
   const macdArr = [];
@@ -162,10 +191,18 @@ function calcMACD(closes) {
     ema26 = closes[i] * k26 + ema26 * (1 - k26);
     macdArr.push(ema12 - ema26);
   }
-  // Signal = EMA(9) do MACD line
+  // Signal Line = EMA(9) do MACD, inicializada com SMA(9) dos primeiros 9 valores
+  // Isso alinha com TradingView/MT5 e evita noise nos primeiros candles
   const k9 = 2 / 10;
-  let sig = macdArr[0];
-  for (let i = 1; i < macdArr.length; i++) sig = macdArr[i] * k9 + sig * (1 - k9);
+  let sig;
+  if (macdArr.length < 9) {
+    sig = macdArr[macdArr.length - 1];
+  } else {
+    sig = macdArr.slice(0, 9).reduce((a, b) => a + b, 0) / 9; // SMA(9) seed
+    for (let i = 9; i < macdArr.length; i++) {
+      sig = macdArr[i] * k9 + sig * (1 - k9);
+    }
+  }
   return { macd: macdArr[macdArr.length - 1], signal: sig };
 }
 
@@ -498,7 +535,7 @@ function detectDivergence(candles, period = 14) {
               priceHigh: highs[i], rsiVal: rsiArr[i]
             });
           }
-          // Divergência Bullish Escondida: preço faz HH, MACD faz HL
+          // Divergência Bearish Regular MACD: preço faz HH, MACD faz LH (enfraquecimento)
           if (highs[i] > highs[j] && macdArr[i] < macdArr[j]) {
             divergences.push({
               type: 'bearish_macd',
@@ -885,6 +922,23 @@ function buildMarketClosedPayload(key) {
   };
 }
 
+// ===== VALIDAÇÃO DE CANDLES (NaN/null guard) =====
+// Filtra e valida candles recebidos de qualquer fonte de dados.
+// Candles com valores NaN/null/undefined são removidos para não corromper indicadores.
+function validateCandles(candles, source) {
+  if (!Array.isArray(candles)) return [];
+  const valid = candles.filter(c => {
+    if (!c || typeof c !== 'object') return false;
+    if (isNaN(c.time) || isNaN(c.open) || isNaN(c.high) || isNaN(c.low) || isNaN(c.close)) return false;
+    if (c.open === null || c.high === null || c.low === null || c.close === null) return false;
+    if (c.high < c.low) return false; // sanity check
+    return true;
+  });
+  const removed = candles.length - valid.length;
+  if (removed > 0) console.log(`⚠️  ${source}: ${removed} candles inválidos removidos de ${candles.length}`);
+  return valid;
+}
+
 // Cache genérico
 const cache = {};
 Object.keys(ASSETS).forEach(k => { cache[k] = { data: null, updatedAt: null }; });
@@ -938,13 +992,14 @@ async function fetchBtcFromKraken() {
   const raw = res.data.result?.XXBTZUSD;
   if (!raw?.length) throw new Error('Kraken: sem dados na resposta');
 
-  const candles15m = raw.map(k => ({
+  const candles15m = validateCandles(raw.map(k => ({
     time:  parseInt(k[0]),
     open:  parseFloat(k[1]),
     high:  parseFloat(k[2]),
     low:   parseFloat(k[3]),
     close: parseFloat(k[4]),
-  })).slice(-500);
+  })), 'Kraken').slice(-500);
+  if (candles15m.length < 10) throw new Error('Kraken: dados insuficientes após validação');
 
   const now = Date.now();
   return {
@@ -995,8 +1050,8 @@ async function fetchFromOanda(assetKey) {
 
   if (!res.data?.candles?.length) throw new Error('OANDA: sem candles na resposta');
 
-  // Filtra só candles completos (não o candle atual ainda formando)
-  const all = res.data.candles
+  // Filtra só candles completos (não o candle atual ainda formando) + validação NaN
+  const all = validateCandles(res.data.candles
     .filter(c => c.complete)
     .map(c => ({
       time:  Math.floor(new Date(c.time).getTime() / 1000),
@@ -1004,9 +1059,9 @@ async function fetchFromOanda(assetKey) {
       high:  parseFloat(c.mid.h),
       low:   parseFloat(c.mid.l),
       close: parseFloat(c.mid.c),
-    }));
+    })), 'OANDA');
 
-  if (all.length < 10) throw new Error('OANDA: dados insuficientes');
+  if (all.length < 10) throw new Error('OANDA: dados insuficientes após validação');
 
   return {
     success:      true,
@@ -1047,16 +1102,16 @@ async function fetchFromTwelveData(symbol) {
 
   const intervalMs = 15 * 60 * 1000;
   const now = Date.now();
-  const all = res.data.values.reverse().map(v => ({
+  const all = validateCandles(res.data.values.reverse().map(v => ({
     // Usa o datetime REAL retornado pela API (UTC). Adicionar 'Z' força parse como UTC.
     time:  Math.floor(new Date(v.datetime + 'Z').getTime() / 1000),
     open:  parseFloat(v.open),
     high:  parseFloat(v.high),
     low:   parseFloat(v.low),
     close: parseFloat(v.close)
-  })).filter(c => ((c.time * 1000) + intervalMs) <= now);
+  })).filter(c => ((c.time * 1000) + intervalMs) <= now), 'TwelveData');
 
-  if (!all.length) throw new Error('Sem candles completos na Twelve Data');
+  if (!all.length) throw new Error('Sem candles válidos na Twelve Data');
 
   return {
     success:      true,
@@ -1100,7 +1155,7 @@ async function fetchFromYahoo(assetKey) {
   const intervalMs = 15 * 60 * 1000;
   const now        = Date.now();
 
-  const all = timestamps
+  const all = validateCandles(timestamps
     .map((t, i) => ({
       time:  t,
       open:  quotes.open[i],
@@ -1109,9 +1164,9 @@ async function fetchFromYahoo(assetKey) {
       close: quotes.close[i],
     }))
     .filter(c => c.open !== null && c.high !== null && c.low !== null && c.close !== null)
-    .filter(c => ((c.time * 1000) + intervalMs) <= now);
+    .filter(c => ((c.time * 1000) + intervalMs) <= now), 'Yahoo');
 
-  if (all.length < 10) throw new Error('Yahoo: dados insuficientes');
+  if (all.length < 10) throw new Error('Yahoo: dados insuficientes após validação');
 
   return {
     success:      true,

@@ -1472,19 +1472,47 @@ function renderBtChart(asset, candles, trades, stratKey){
     const hasSLStrat = trades.length > 0 && trades[0].hasSL;
     const hasTP      = trades.length > 0 && trades[0].tp != null;
     const winLabel   = hasTP ? '✓TP' : hasSLStrat ? '✓TRAIL' : '✓EXIT';
-    const lossLabel  = hasSLStrat ? ' SL' : ' EXIT';
+    const lossLabel  = hasSLStrat ? '✗SL' : '✗EXIT';
     const markers = [];
     trades.forEach(t=>{
         if(t.type==='COMPRA'){
+            // LONG: entrada abaixo (seta pra cima), saída acima (seta pra baixo)
             markers.push({time:candles[t.entryIdx].time, position:'belowBar', color:'#00ff41', shape:'arrowUp',   text:'▲ LONG'});
             markers.push({time:candles[t.exitIdx].time,  position:'aboveBar', color:t.win?'#00d4ff':'#ff3355', shape:'arrowDown', text:t.win?winLabel:lossLabel});
         } else {
+            // SHORT: entrada acima (seta pra baixo), saída TAMBÉM acima (seta pra cima)
+            // Corrigido: exit marker para SHORT deve ser aboveBar com arrowUp (preço sai acima)
             markers.push({time:candles[t.entryIdx].time, position:'aboveBar', color:'#ff3355', shape:'arrowDown', text:'▼ SHORT'});
-            markers.push({time:candles[t.exitIdx].time,  position:'belowBar', color:t.win?'#00d4ff':'#ff3355', shape:'arrowUp',   text:t.win?winLabel:lossLabel});
+            markers.push({time:candles[t.exitIdx].time,  position:t.win?'belowBar':'aboveBar', color:t.win?'#00d4ff':'#ff3355', shape:t.win?'arrowDown':'arrowUp', text:t.win?winLabel:lossLabel});
         }
     });
     markers.sort((a,b)=>a.time-b.time);
     cs.setMarkers(markers);
+
+    // ─── SL/TP Price Lines no gráfico ───
+    // Remove linhas anteriores e desenha novas para cada trade visível
+    trades.forEach(t=>{
+        if(t.sl != null){
+            cs.createPriceLine({
+                price: t.sl,
+                color: '#ff3355',
+                lineWidth: 1,
+                lineStyle: LightweightCharts.LineStyle.Dashed,
+                axisLabelVisible: true,
+                title: 'SL ' + t.sl.toFixed(2),
+            });
+        }
+        if(t.tp != null){
+            cs.createPriceLine({
+                price: t.tp,
+                color: '#00ff41',
+                lineWidth: 1,
+                lineStyle: LightweightCharts.LineStyle.Dashed,
+                axisLabelVisible: true,
+                title: 'TP ' + t.tp.toFixed(2),
+            });
+        }
+    });
 
     btCharts[asset].timeScale().fitContent();
 }
@@ -1576,17 +1604,4 @@ async function fetchData() {
         }
 
         // Executa backtest inicial (Master Signal, XAU, 1H)
-        const xauBtn = document.querySelector('#tab-xau .strat-btn.active');
-        if (xauBtn) {
-            runBacktest('xau', 'master', xauBtn);
-        }
-    } catch(e) {
-        console.error('Erro ao carregar dados:', e);
-    }
-}
-
-// Load dados ao abrir a página
-document.addEventListener('DOMContentLoaded', fetchData);
-</script>
-</body>
-</html>
+        const xauBtn = document.querySelector('#tab-xau .strat-btn.acti

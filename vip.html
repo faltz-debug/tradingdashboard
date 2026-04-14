@@ -1025,47 +1025,4 @@ function openCloseModal(id) {
   closingTradeId = id;
   document.getElementById('modalClosePrice').value = '';
   document.getElementById('modalMsg').textContent = '';
-  document.getElementById('closeModal').classList.add('open');
-}
-function closeModal() {
-  closingTradeId = null;
-  document.getElementById('closeModal').classList.remove('open');
-}
-async function submitClose(outcome) {
-  const closePrice = parseFloat(document.getElementById('modalClosePrice').value);
-  if (!closePrice || isNaN(closePrice)) {
-    document.getElementById('modalMsg').className = 'form-msg err';
-    document.getElementById('modalMsg').textContent = '❌ Informe o preço';
-    return;
-  }
-  try {
-    const r = await vipFetch('/api/vip/trades/close', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ id: closingTradeId, closePrice, outcome }),
-    });
-    const d = await r.json();
-    if (d.success) { closeModal(); loadTrades(); }
-    else { document.getElementById('modalMsg').className='form-msg err'; document.getElementById('modalMsg').textContent='❌ '+(d.error||'Erro'); }
-  } catch(e) { document.getElementById('modalMsg').className='form-msg err'; document.getElementById('modalMsg').textContent='❌ Erro'; }
-}
-document.getElementById('closeModal').addEventListener('click', function(e) { if (e.target===this) closeModal(); });
-
-// ── TABS ──
-function switchTab(tab) {
-  document.getElementById('tabTrades').classList.toggle('active', tab==='trades');
-  document.getElementById('tabSignals').classList.toggle('active', tab==='signals');
-  document.getElementById('tabTradesContent').style.display  = tab==='trades'  ? '' : 'none';
-  document.getElementById('tabSignalsContent').style.display = tab==='signals' ? '' : 'none';
-  if (tab === 'signals') loadSignalHistory();
-}
-
-// ── INIT ──
-(async function init() {
-  updateVipTokenBadge();
-  syncScannerSelection();
-  await Promise.all([loadSignal(), runScan(), loadTrades()]);
-  startCountdown();
-})();
-</script>
-</body>
-</html>
+  document.getElementById('cl

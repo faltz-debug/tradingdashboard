@@ -2115,20 +2115,4 @@ function switchTF(asset, tf, btn) {
     if (state[asset].data) renderAssetFull(asset, true);
 }
 
-// ─────────────────── BOOT ───────────────────
-window.addEventListener('load', () => {
-    initCharts('xau');          // só XAU — outros assets init lazy quando a aba abrir
-    state.xau.chartsReady = true;
-    state.btc.chartsReady = false;
-    state.eur.chartsReady = false;
-    state.jpy.chartsReady = false;
-    // Permissão de notificação só é pedida quando o usuário clicar em 🔔 Alertas
-    calcRisk();   // pré-calcula com os valores padrão
-    loadData();
-    loadNews();
-    setInterval(loadData, 15 * 60 * 1000); // alinhado com cache do servidor (15min)
-    setInterval(loadNews, 15 * 60 * 1000); // news cache é 30min — 15min é suficiente
-});
-</script>
-</body>
-</html>
+// ────────────
