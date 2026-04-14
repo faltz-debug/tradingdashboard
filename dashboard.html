@@ -1978,6 +1978,9 @@ async function loadLiveSignalStats() {
         const topRow = (group) => Object.entries(group || {})
             .sort((a, b) => (b[1].winRate - a[1].winRate) || (b[1].sumPct - a[1].sumPct))
             .map(([name, row]) => `${name} (${row.total} | WR ${row.winRate}%)`)[0] || '—';
+        const outcomeTypeTop = Object.entries(stats.byOutcomeType || {})
+            .sort((a, b) => b[1].total - a[1].total)
+            .map(([name, row]) => `${name} (${row.total})`)[0] || '—';
 
         panel.style.display = '';
         meta.textContent = `Avaliados após 4 candles de 15m • pendentes: ${stats.pending || 0}`;
@@ -2012,6 +2015,11 @@ async function loadLiveSignalStats() {
                 <div class="la-label">Melhor Sessão</div>
                 <div class="la-value" style="color:#5eead4;font-size:18px">${topRow(stats.bySession)}</div>
                 <div class="la-sub">Sessão com melhor consistência</div>
+            </div>
+            <div class="live-audit-card">
+                <div class="la-label">Saída Mais Comum</div>
+                <div class="la-value" style="color:#fda4af;font-size:18px">${outcomeTypeTop}</div>
+                <div class="la-sub">TP, SL ou fechamento por horizonte</div>
             </div>
         `;
     } catch (e) {

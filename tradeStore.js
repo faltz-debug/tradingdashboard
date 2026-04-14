@@ -101,6 +101,7 @@ function appendLiveSignal(signalObj) {
     evaluation: {
       status: 'PENDING',
       horizonCandles: signalObj.horizonCandles || 4,
+      outcomeType: null,
       evaluatedAt: null,
       evaluationPrice: null,
       evaluationCandleTime: null,
@@ -131,17 +132,64 @@ function evaluateLiveSignals({ asset, candles, tf = '15m', horizonCandles = 4 } 
     const targetIdx = entryIdx + horizon;
     if (targetIdx >= candles.length) continue;
 
-    const target = candles[targetIdx];
+    const futureCandles = candles.slice(entryIdx + 1, targetIdx + 1);
+    const hasLevels = item.slPrice != null && item.tpPrice != null;
+    let resolvedByLevel = false;
+    let exitPrice = null;
+    let exitCandle = null;
+    let outcomeType = 'HORIZON';
+
+    if (hasLevels) {
+      for (const candle of futureCandles) {
+        const hitTp = item.direction === 'BUY'
+          ? candle.high >= item.tpPrice
+          : candle.low <= item.tpPrice;
+        const hitSl = item.direction === 'BUY'
+          ? candle.low <= item.slPrice
+          : candle.high >= item.slPrice;
+
+        if (hitTp && hitSl) {
+          // Regra conservadora: assume SL primeiro quando TP e SL cabem na mesma vela.
+          exitPrice = item.slPrice;
+          exitCandle = candle;
+          outcomeType = 'SL_HIT_SAME_BAR';
+          resolvedByLevel = true;
+          break;
+        }
+        if (hitSl) {
+          exitPrice = item.slPrice;
+          exitCandle = candle;
+          outcomeType = 'SL_HIT';
+          resolvedByLevel = true;
+          break;
+        }
+        if (hitTp) {
+          exitPrice = item.tpPrice;
+          exitCandle = candle;
+          outcomeType = 'TP_HIT';
+          resolvedByLevel = true;
+          break;
+        }
+      }
+    }
+
+    if (!resolvedByLevel) {
+      exitCandle = candles[targetIdx];
+      exitPrice = exitCandle.close;
+      outcomeType = 'HORIZON';
+    }
+
     const rawPct = item.direction === 'BUY'
-      ? ((target.close - item.entryPrice) / item.entryPrice) * 100
-      : ((item.entryPrice - target.close) / item.entryPrice) * 100;
+      ? ((exitPrice - item.entryPrice) / item.entryPrice) * 100
+      : ((item.entryPrice - exitPrice) / item.entryPrice) * 100;
 
     item.evaluation.status = rawPct > 0 ? 'WIN' : rawPct < 0 ? 'LOSS' : 'FLAT';
+    item.evaluation.outcomeType = outcomeType;
     item.evaluation.evaluatedAt = Date.now();
-    item.evaluation.evaluationPrice = target.close;
-    item.evaluation.evaluationCandleTime = target.time;
+    item.evaluation.evaluationPrice = exitPrice;
+    item.evaluation.evaluationCandleTime = exitCandle.time;
     item.evaluation.realizedPct = parseFloat(rawPct.toFixed(4));
-    item.evaluation.candlesElapsed = horizon;
+    item.evaluation.candlesElapsed = Math.max(1, indexByTime.get(exitCandle.time) - entryIdx);
     updates++;
   }
 
@@ -196,6 +244,7 @@ function getLiveSignalStats({ asset } = {}) {
     byRegime: groupMetric(item => item.audit?.regime),
     bySession: groupMetric(item => item.audit?.session?.label),
     byDirection: groupMetric(item => item.direction),
+    byOutcomeType: groupMetric(item => item.evaluation?.outcomeType),
   };
 }
 
