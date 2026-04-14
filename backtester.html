@@ -809,6 +809,17 @@ function isGoodSession(timestampSec, asset) {
     return london || ny;
 }
 
+function getSessionLabel(timestampSec, asset) {
+    if (asset === 'btc') return 'BTC 24/7';
+    const h = new Date(timestampSec * 1000).getUTCHours();
+    const london = h >= 7 && h < 16;
+    const ny = h >= 12 && h < 21;
+    if (london && ny) return 'London + NY';
+    if (london) return 'London';
+    if (ny) return 'NY';
+    return 'Fora da sessão';
+}
+
 // ─── NEWS BLACKOUT: evita operar nos ±30min de eventos econômicos ───
 // Eventos importantes: Fed, BCE, BoE, CPI, NFP, PoMC, ECB decisions, etc
 function isNewsBlackoutTime(timestampSec) {
@@ -900,11 +911,14 @@ function getMasterSignalSnapshot(candles, indicators, i, asset) {
     const score = adxOk ? rawScore : rawScore > 0 ? 1 : rawScore < 0 ? -1 : 0;
     const classification = classifyMasterSignal(score);
     const tradableScore = rawScore === 3 || rawScore === -3;
+    const sessionOk = isGoodSession(candle.time, asset);
+    const sessionLabel = getSessionLabel(candle.time, asset);
+    const newsBlocked = isNewsBlackoutTime(candle.time);
     const isTradable = tradableScore
         && adxOk
         && !!atr[i]
-        && isGoodSession(candle.time, asset)
-        && !isNewsBlackoutTime(candle.time);
+        && sessionOk
+        && !newsBlocked;
 
     return {
         price,
@@ -918,6 +932,9 @@ function getMasterSignalSnapshot(candles, indicators, i, asset) {
         score,
         label: classification.label,
         bias: classification.bias,
+        sessionOk,
+        sessionLabel,
+        newsBlocked,
         isTradable,
     };
 }
@@ -956,6 +973,7 @@ const STRATEGIES = {
             const trades = [];
             let inTrade = false, tradeType = '', entryIdx = 0, entryPrice = 0, slPrice = 0, tpPrice = 0;
             let entryBarIdx = -1;
+            let entryAudit = null;
             const indicators = { e9, e20, e50, rsi, atr, adx };
 
             for (let i = 55; i < candles.length; i++) {
@@ -969,32 +987,77 @@ const STRATEGIES = {
                         slPrice = entryPrice - MASTER_SIGNAL_CFG.stopAtrMult * signal.atr;
                         tpPrice = entryPrice + MASTER_SIGNAL_CFG.takeAtrMult * signal.atr;
                         inTrade = true; tradeType = 'COMPRA'; entryIdx = i; entryBarIdx = i;
+                        entryAudit = {
+                            rawScore: signal.rawScore,
+                            finalScore: signal.score,
+                            label: signal.label,
+                            adx: signal.adx,
+                            trendSig: signal.trendSig,
+                            rsiTrendSig: signal.rsiTrendSig,
+                            bkSig: signal.bkSig,
+                            sessionOk: signal.sessionOk,
+                            sessionLabel: signal.sessionLabel,
+                            newsBlocked: signal.newsBlocked,
+                        };
                     } else if (signal.rawScore === -3) {
                         entryPrice = c.close;
                         slPrice = entryPrice + MASTER_SIGNAL_CFG.stopAtrMult * signal.atr;
                         tpPrice = entryPrice - MASTER_SIGNAL_CFG.takeAtrMult * signal.atr;
                         inTrade = true; tradeType = 'VENDA'; entryIdx = i; entryBarIdx = i;
+                        entryAudit = {
+                            rawScore: signal.rawScore,
+                            finalScore: signal.score,
+                            label: signal.label,
+                            adx: signal.adx,
+                            trendSig: signal.trendSig,
+                            rsiTrendSig: signal.rsiTrendSig,
+                            bkSig: signal.bkSig,
+                            sessionOk: signal.sessionOk,
+                            sessionLabel: signal.sessionLabel,
+                            newsBlocked: signal.newsBlocked,
+                        };
                     }
                 } else {
                     if (i <= entryBarIdx) continue;
                     let exit = false, exitPrice = c.close;
                     const scoreWeak = tradeType === 'COMPRA' ? signal.score <= 0 : signal.score >= 0;
+                    let exitReason = 'FORCA_PERDIDA';
 
                     if (tradeType === 'COMPRA') {
-                        if (c.low <= slPrice) { exit = true; exitPrice = slPrice; }
-                        else if (c.high >= tpPrice) { exit = true; exitPrice = tpPrice; }
-                        else if (scoreWeak) { exit = true; }
+                        if (c.low <= slPrice) { exit = true; exitPrice = slPrice; exitReason = 'STOP_LOSS'; }
+                        else if (c.high >= tpPrice) { exit = true; exitPrice = tpPrice; exitReason = 'TAKE_PROFIT'; }
+                        else if (scoreWeak) { exit = true; exitReason = 'FORCA_PERDIDA'; }
                     } else {
-                        if (c.high >= slPrice) { exit = true; exitPrice = slPrice; }
-                        else if (c.low <= tpPrice) { exit = true; exitPrice = tpPrice; }
-                        else if (scoreWeak) { exit = true; }
+                        if (c.high >= slPrice) { exit = true; exitPrice = slPrice; exitReason = 'STOP_LOSS'; }
+                        else if (c.low <= tpPrice) { exit = true; exitPrice = tpPrice; exitReason = 'TAKE_PROFIT'; }
+                        else if (scoreWeak) { exit = true; exitReason = 'FORCA_PERDIDA'; }
                     }
 
                     if (exit) {
                         const pct = tradePct(tradeType, entryPrice, exitPrice);
-                        trades.push({ entryIdx, exitIdx: i, entryPrice, exitPrice, pct, win: pct > 0, type: tradeType, sl: slPrice, tp: tpPrice, hasSL: true });
+                        trades.push({
+                            entryIdx,
+                            exitIdx: i,
+                            entryPrice,
+                            exitPrice,
+                            pct,
+                            win: pct > 0,
+                            type: tradeType,
+                            sl: slPrice,
+                            tp: tpPrice,
+                            hasSL: true,
+                            exitReason,
+                            audit: {
+                                ...entryAudit,
+                                exitScore: signal.score,
+                                exitRawScore: signal.rawScore,
+                                exitLabel: signal.label,
+                                exitAdx: signal.adx,
+                            }
+                        });
                         inTrade = false;
                         entryBarIdx = -1;
+                        entryAudit = null;
                     }
                 }
             }
@@ -1450,6 +1513,20 @@ function runBacktest(asset, stratKey, btn) {
     const costPct  = getCostPct(asset);
     const costLabel= COST_PRESETS[activeCostPreset]?.label || '';
     const costRound= (costPct * 2).toFixed(3); // round-trip
+    const auditTrades = trades.filter(t => t.audit);
+    const avgEntryAdx = auditTrades.length
+        ? (auditTrades.reduce((a, t) => a + (t.audit.adx || 0), 0) / auditTrades.length).toFixed(1)
+        : null;
+    const exitReasonMap = {};
+    auditTrades.forEach(t => {
+        const key = t.exitReason || 'N/A';
+        exitReasonMap[key] = (exitReasonMap[key] || 0) + 1;
+    });
+    const exitReasonLabel = Object.entries(exitReasonMap)
+        .sort((a, b) => b[1] - a[1])
+        .map(([k, v]) => `${k.replaceAll('_', ' ')}(${v})`)
+        .slice(0, 3)
+        .join(' • ') || '—';
 
     document.getElementById(asset+'-summary').innerHTML = `
         <div class="summary-card"><div class="s-label">Total Trades</div><div class="s-value s-blue">${total}</div></div>
@@ -1461,6 +1538,8 @@ function runBacktest(asset, stratKey, btn) {
         <div class="summary-card" style="border-color:#00ff4133"><div class="s-label">🟢 Longs / WR</div><div class="s-value s-green">${longs.length} / ${wrL}%</div></div>
         <div class="summary-card" style="border-color:#ff335533"><div class="s-label">🔴 Shorts / WR</div><div class="s-value s-red">${shorts.length} / ${wrS}%</div></div>
         <div class="summary-card" style="border-color:#ffaa0055"><div class="s-label">💸 Custo/Trade</div><div class="s-value s-yellow" style="font-size:16px">−${costRound}%</div><div style="font-size:9px;color:#64748b;margin-top:4px">${costLabel}</div></div>
+        ${auditTrades.length ? `<div class="summary-card" style="border-color:#00d4ff55"><div class="s-label">🔎 ADX Médio Entrada</div><div class="s-value s-blue">${avgEntryAdx}</div><div style="font-size:9px;color:#64748b;margin-top:4px">Master Signal</div></div>` : ''}
+        ${auditTrades.length ? `<div class="summary-card" style="border-color:#8b5cf655"><div class="s-label">🧾 Motivos Saída</div><div class="s-value" style="color:#c4b5fd;font-size:14px">${exitReasonLabel}</div><div style="font-size:9px;color:#64748b;margin-top:4px">TP / SL / força</div></div>` : ''}
         ${confluenceEnabled ? (() => {
             const patCount = trades.filter(t=>t.pattern&&t.pattern!=='').length;
             const patMap = {};
@@ -1608,12 +1687,38 @@ function renderTradesTable(asset, candles, trades){
     const fmt = v => asset==='btc' ? '$'+Math.round(v).toLocaleString() : asset==='eur' ? v.toFixed(5) : asset==='jpy' ? v.toFixed(3) : '$'+v.toFixed(2);
     const hasSlTp  = trades.some(t => t.sl != null);
     const hasPat   = confluenceEnabled && trades.some(t => t.pattern);
+    const hasAudit = trades.some(t => t.audit);
+
+    const formatExitReason = (reason) => {
+        if (!reason) return '—';
+        if (reason === 'STOP_LOSS') return 'Stop Loss';
+        if (reason === 'TAKE_PROFIT') return 'Take Profit';
+        if (reason === 'FORCA_PERDIDA') return 'Força perdida';
+        return reason.replaceAll('_', ' ');
+    };
+
+    const renderAuditCell = (trade) => {
+        if (!trade.audit) return '';
+        const entryScore = `${trade.audit.rawScore > 0 ? '+' : ''}${trade.audit.rawScore} / ${trade.audit.finalScore > 0 ? '+' : ''}${trade.audit.finalScore}`;
+        const exitScore = `${trade.audit.exitRawScore > 0 ? '+' : ''}${trade.audit.exitRawScore} / ${trade.audit.exitScore > 0 ? '+' : ''}${trade.audit.exitScore}`;
+        const sessionColor = trade.audit.sessionOk ? '#00ff41' : '#ffaa00';
+        const newsColor = trade.audit.newsBlocked ? '#ff3355' : '#00d4ff';
+        return `<td style="font-size:10px;line-height:1.45;min-width:220px">
+            <div><span style="color:#00d4ff">Score E:</span> ${entryScore}</div>
+            <div><span style="color:#00d4ff">ADX:</span> ${trade.audit.adx.toFixed(1)} | <span style="color:${sessionColor}">${trade.audit.sessionLabel}</span></div>
+            <div><span style="color:#00d4ff">Filtros:</span> ${trade.audit.trendSig} / ${trade.audit.rsiTrendSig} / ${trade.audit.bkSig}</div>
+            <div><span style="color:${newsColor}">News:</span> ${trade.audit.newsBlocked ? 'bloqueado' : 'livre'} | <span style="color:#a78bfa">Score X:</span> ${exitScore}</div>
+        </td>`;
+    };
+
+    const reasonHead = hasAudit ? '<th style="color:#c4b5fd">🧾 Saída</th>' : '';
+    const auditHead = hasAudit ? '<th style="color:#00d4ff">🔎 Auditoria</th>' : '';
     // Update table headers
     const thead = document.querySelector('#'+asset+'-trades-table thead tr');
     const patHead = hasPat ? '<th style="color:#10b981">🕯️ Padrão</th>' : '';
     thead.innerHTML = hasSlTp
-        ? `<th>#</th><th>Entrada</th><th>Saída</th><th>Tipo</th>${patHead}<th>Preço Entrada</th><th>🛑 Stop Loss</th><th>🎯 Take Profit</th><th>Preço Saída</th><th>Resultado %</th><th>Resultado $</th>`
-        : `<th>#</th><th>Entrada</th><th>Saída</th><th>Tipo</th>${patHead}<th>Preço Entrada</th><th>Preço Saída</th><th>Resultado %</th><th>Resultado $</th>`;
+        ? `<th>#</th><th>Entrada</th><th>Saída</th><th>Tipo</th>${patHead}${reasonHead}${auditHead}<th>Preço Entrada</th><th>🛑 Stop Loss</th><th>🎯 Take Profit</th><th>Preço Saída</th><th>Resultado %</th><th>Resultado $</th>`
+        : `<th>#</th><th>Entrada</th><th>Saída</th><th>Tipo</th>${patHead}${reasonHead}${auditHead}<th>Preço Entrada</th><th>Preço Saída</th><th>Resultado %</th><th>Resultado $</th>`;
     let equity=1000;
     tbody.innerHTML = trades.map((t,i)=>{
         const earn = equity*(t.pct/100);
@@ -1624,12 +1729,18 @@ function renderTradesTable(asset, candles, trades){
         const patCol = hasPat
             ? `<td style="color:#10b981;font-size:10px">${t.pattern||'—'}</td>`
             : '';
+        const reasonCol = hasAudit
+            ? `<td style="color:#c4b5fd;font-size:10px">${formatExitReason(t.exitReason)}</td>`
+            : '';
+        const auditCol = hasAudit ? renderAuditCell(t) : '';
         return `<tr class="${t.win?'win':'loss'}">
             <td>${i+1}</td>
             <td>${new Date(candles[t.entryIdx].time*1000).toLocaleDateString('pt-BR')}</td>
             <td>${new Date(candles[t.exitIdx].time*1000).toLocaleDateString('pt-BR')}</td>
             <td>${t.type==='COMPRA'?'🟢 COMPRA':'🔴 VENDA'}</td>
             ${patCol}
+            ${reasonCol}
+            ${auditCol}
             <td>${fmt(t.entryPrice)}</td>
             ${slTpCols}
             <td>${fmt(t.exitPrice)}</td>
