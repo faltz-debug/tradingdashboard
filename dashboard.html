@@ -619,6 +619,7 @@ const state = {
     eur: { data: null, tf: '1h', charts: {} },
     jpy: { data: null, tf: '1h', charts: {} }
 };
+let liveSignalStats = null;
 let activeAsset = 'xau';
 
 // ─────────────────── PAGE SWITCHING (Dashboard / Calculator) ───────────────────
@@ -1970,6 +1971,7 @@ async function loadLiveSignalStats() {
         const res = await fetch('/api/live-signals/stats');
         const data = await res.json();
         const stats = data?.stats;
+        liveSignalStats = stats || null;
         const panel = document.getElementById('live-audit-panel');
         const grid = document.getElementById('live-audit-grid');
         const meta = document.getElementById('live-audit-meta');
@@ -1981,6 +1983,8 @@ async function loadLiveSignalStats() {
         const outcomeTypeTop = Object.entries(stats.byOutcomeType || {})
             .sort((a, b) => b[1].total - a[1].total)
             .map(([name, row]) => `${name} (${row.total})`)[0] || '—';
+        const bestContext = (stats.strongContexts || [])[0];
+        const weakContext = (stats.weakContexts || [])[0];
 
         panel.style.display = '';
         meta.textContent = `Avaliados após 4 candles de 15m • pendentes: ${stats.pending || 0}`;
@@ -2020,6 +2024,16 @@ async function loadLiveSignalStats() {
                 <div class="la-label">Saída Mais Comum</div>
                 <div class="la-value" style="color:#fda4af;font-size:18px">${outcomeTypeTop}</div>
                 <div class="la-sub">TP, SL ou fechamento por horizonte</div>
+            </div>
+            <div class="live-audit-card">
+                <div class="la-label">Contexto Favorável</div>
+                <div class="la-value" style="color:#86efac;font-size:16px">${bestContext ? `${bestContext.group}: ${bestContext.name}` : '—'}</div>
+                <div class="la-sub">${bestContext ? `WR ${bestContext.winRate}% • ${bestContext.total} sinais` : 'Ainda sem amostra forte'}</div>
+            </div>
+            <div class="live-audit-card">
+                <div class="la-label">Contexto Fraco</div>
+                <div class="la-value" style="color:#fca5a5;font-size:16px">${weakContext ? `${weakContext.group}: ${weakContext.name}` : '—'}</div>
+                <div class="la-sub">${weakContext ? `WR ${weakContext.winRate}% • ${weakContext.total} sinais` : 'Sem contexto fraco validado'}</div>
             </div>
         `;
     } catch (e) {
@@ -2170,6 +2184,27 @@ function updateSignalBanner() {
         const auditText = audit
             ? `${audit.regime} • ${audit.session?.label || '—'} • ${audit.news?.isBlocked ? 'news bloqueada' : 'news livre'}`
             : 'Auditoria indisponível';
+        let contextHealthText = 'Contexto sem histórico suficiente';
+        let contextHealthColor = '#64748b';
+        if (liveSignalStats && audit) {
+            const assetRow = liveSignalStats.byAsset?.[asset];
+            const regimeRow = liveSignalStats.byRegime?.[audit.regime];
+            const sessionRow = liveSignalStats.bySession?.[audit.session?.label];
+            const candidates = [assetRow, regimeRow, sessionRow].filter(Boolean);
+            const weak = candidates.find(r => r.health === 'WEAK');
+            const strong = candidates.find(r => r.health === 'STRONG');
+            if (weak) {
+                contextHealthText = `Contexto fraco no histórico • WR ${weak.winRate}%`;
+                contextHealthColor = '#ff3355';
+            } else if (strong) {
+                contextHealthText = `Contexto favorável no histórico • WR ${strong.winRate}%`;
+                contextHealthColor = '#00ff41';
+            } else if (candidates.some(r => r.health === 'MIXED')) {
+                const mixed = candidates.find(r => r.health === 'MIXED');
+                contextHealthText = `Contexto misto • WR ${mixed.winRate}%`;
+                contextHealthColor = '#ffaa00';
+            }
+        }
 
         // Confluência de timeframes
         const conf  = srv.tfConfluence || ['15M'];
@@ -2190,6 +2225,7 @@ function updateSignalBanner() {
                     Score: ${score > 0 ? '+' : ''}${score}/3 &nbsp;|&nbsp; RSI: ${rsi?.toFixed(0) ?? '—'} &nbsp;|&nbsp; Preço: ${fmt(price)}
                 </div>
                 <div style="font-size:10px;color:#64748b;margin-top:4px">${auditText}</div>
+                <div style="font-size:10px;color:${contextHealthColor};margin-top:4px">${contextHealthText}</div>
             </div>`;
 
         // Notificação browser se sinal mudou

@@ -213,6 +213,13 @@ function getLiveSignalStats({ asset } = {}) {
   const losses = resolved.filter(s => s.evaluation.status === 'LOSS');
   const flats = resolved.filter(s => s.evaluation.status === 'FLAT');
 
+  const classifyBucket = (row) => {
+    if (!row || row.total < 5) return 'LOW_SAMPLE';
+    if (row.winRate >= 58 && row.sumPct > 0) return 'STRONG';
+    if (row.winRate <= 45 && row.sumPct < 0) return 'WEAK';
+    return 'MIXED';
+  };
+
   const groupMetric = (keyFn) => {
     const map = {};
     resolved.forEach(item => {
@@ -227,9 +234,36 @@ function getLiveSignalStats({ asset } = {}) {
     Object.values(map).forEach(row => {
       row.winRate = row.total ? parseFloat(((row.wins / row.total) * 100).toFixed(1)) : 0;
       row.sumPct = parseFloat(row.sumPct.toFixed(2));
+      row.health = classifyBucket(row);
     });
     return map;
   };
+
+  const buildRanking = (groupName, groupMap) => Object.entries(groupMap || {})
+    .map(([name, row]) => ({
+      group: groupName,
+      name,
+      total: row.total,
+      winRate: row.winRate,
+      sumPct: row.sumPct,
+      health: row.health,
+      score: parseFloat((row.winRate + row.sumPct * 2).toFixed(2)),
+    }))
+    .sort((a, b) => (b.score - a.score) || (b.winRate - a.winRate) || (b.sumPct - a.sumPct));
+
+  const byAsset = groupMetric(item => item.asset);
+  const byRegime = groupMetric(item => item.audit?.regime);
+  const bySession = groupMetric(item => item.audit?.session?.label);
+  const byDirection = groupMetric(item => item.direction);
+  const byOutcomeType = groupMetric(item => item.evaluation?.outcomeType);
+  const rankedContexts = [
+    ...buildRanking('asset', byAsset),
+    ...buildRanking('regime', byRegime),
+    ...buildRanking('session', bySession),
+    ...buildRanking('direction', byDirection),
+  ];
+  const strongContexts = rankedContexts.filter(r => r.health === 'STRONG').slice(0, 5);
+  const weakContexts = rankedContexts.filter(r => r.health === 'WEAK').slice(0, 5);
 
   return {
     totalSignals: items.length,
@@ -240,11 +274,14 @@ function getLiveSignalStats({ asset } = {}) {
     losses: losses.length,
     flats: flats.length,
     avgPct: resolved.length ? parseFloat((resolved.reduce((a, s) => a + (s.evaluation.realizedPct || 0), 0) / resolved.length).toFixed(3)) : 0,
-    byAsset: groupMetric(item => item.asset),
-    byRegime: groupMetric(item => item.audit?.regime),
-    bySession: groupMetric(item => item.audit?.session?.label),
-    byDirection: groupMetric(item => item.direction),
-    byOutcomeType: groupMetric(item => item.evaluation?.outcomeType),
+    byAsset,
+    byRegime,
+    bySession,
+    byDirection,
+    byOutcomeType,
+    rankedContexts,
+    strongContexts,
+    weakContexts,
   };
 }
 
