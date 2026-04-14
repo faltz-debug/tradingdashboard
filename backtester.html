@@ -1604,4 +1604,17 @@ async function fetchData() {
         }
 
         // Executa backtest inicial (Master Signal, XAU, 1H)
-        const xauBtn = document.querySelector('#tab-xau .strat-btn.acti
+        const xauBtn = document.querySelector('#tab-xau .strat-btn.active');
+        if (xauBtn) {
+            runBacktest('xau', 'master', xauBtn);
+        }
+    } catch(e) {
+        console.error('Erro ao carregar dados:', e);
+    }
+}
+
+// Load dados ao abrir a página
+document.addEventListener('DOMContentLoaded', fetchData);
+</script>
+</body>
+</html>
