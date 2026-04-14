@@ -192,6 +192,57 @@
             vertical-align: middle;
             margin-left: 6px;
         }
+
+        .live-audit-panel {
+            display: none;
+            margin-bottom: 16px;
+            background: #0d1526;
+            border: 1px solid #1e3a5f;
+            border-radius: 12px;
+            padding: 18px 20px;
+        }
+        .live-audit-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 14px;
+            flex-wrap: wrap;
+        }
+        .live-audit-title {
+            font-size: 12px;
+            font-weight: 700;
+            color: #00d4ff;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .live-audit-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px;
+        }
+        .live-audit-card {
+            background: #070b14;
+            border: 1px solid #1e3a5f;
+            border-radius: 10px;
+            padding: 14px;
+        }
+        .live-audit-card .la-label {
+            font-size: 10px;
+            color: #64748b;
+            text-transform: uppercase;
+            margin-bottom: 6px;
+        }
+        .live-audit-card .la-value {
+            font-size: 24px;
+            font-weight: 700;
+        }
+        .live-audit-card .la-sub {
+            font-size: 10px;
+            color: #475569;
+            margin-top: 6px;
+            line-height: 1.6;
+        }
     </style>
 </head>
 <body>
@@ -292,6 +343,14 @@
         <div id="signal-btc-banner" style="flex:1;min-width:160px"></div>
         <div id="signal-eur-banner" style="flex:1;min-width:160px"></div>
         <div id="signal-jpy-banner" style="flex:1;min-width:160px"></div>
+    </div>
+
+    <div class="live-audit-panel" id="live-audit-panel">
+        <div class="live-audit-head">
+            <div class="live-audit-title">📊 Assertividade Real dos Sinais Emitidos</div>
+            <div id="live-audit-meta" style="font-size:10px;color:#64748b">Avaliados após 4 candles de 15m</div>
+        </div>
+        <div class="live-audit-grid" id="live-audit-grid"></div>
     </div>
 
     <!-- ASSET TABS -->
@@ -1898,10 +1957,66 @@ async function loadData() {
         updateAll();
         updateDataSourceBanner();
         updateUpdateStatus();
+        loadLiveSignalStats();
     } catch (e) {
         document.getElementById('status-text').textContent = 'Erro de conexão';
         document.querySelector('.status-dot').style.background = '#ff3355';
         document.getElementById('update-status').textContent = 'Falha na conexão';
+    }
+}
+
+async function loadLiveSignalStats() {
+    try {
+        const res = await fetch('/api/live-signals/stats');
+        const data = await res.json();
+        const stats = data?.stats;
+        const panel = document.getElementById('live-audit-panel');
+        const grid = document.getElementById('live-audit-grid');
+        const meta = document.getElementById('live-audit-meta');
+        if (!stats || !panel || !grid || !meta) return;
+
+        const topRow = (group) => Object.entries(group || {})
+            .sort((a, b) => (b[1].winRate - a[1].winRate) || (b[1].sumPct - a[1].sumPct))
+            .map(([name, row]) => `${name} (${row.total} | WR ${row.winRate}%)`)[0] || '—';
+
+        panel.style.display = '';
+        meta.textContent = `Avaliados após 4 candles de 15m • pendentes: ${stats.pending || 0}`;
+
+        grid.innerHTML = `
+            <div class="live-audit-card">
+                <div class="la-label">Win Rate Live</div>
+                <div class="la-value" style="color:${(stats.winRate || 0) >= 50 ? '#00ff41' : '#ff3355'}">${stats.winRate || 0}%</div>
+                <div class="la-sub">${stats.evaluated || 0} sinais avaliados</div>
+            </div>
+            <div class="live-audit-card">
+                <div class="la-label">Sinais Pendentes</div>
+                <div class="la-value" style="color:#ffaa00">${stats.pending || 0}</div>
+                <div class="la-sub">Aguardando janela de avaliação</div>
+            </div>
+            <div class="live-audit-card">
+                <div class="la-label">Média por Sinal</div>
+                <div class="la-value" style="color:${(stats.avgPct || 0) >= 0 ? '#00d4ff' : '#ff3355'}">${stats.avgPct || 0}%</div>
+                <div class="la-sub">Retorno médio em 4 candles</div>
+            </div>
+            <div class="live-audit-card">
+                <div class="la-label">Melhor Ativo</div>
+                <div class="la-value" style="color:#00ff41;font-size:18px">${topRow(stats.byAsset)}</div>
+                <div class="la-sub">Ordenado por win rate e retorno</div>
+            </div>
+            <div class="live-audit-card">
+                <div class="la-label">Melhor Regime</div>
+                <div class="la-value" style="color:#a78bfa;font-size:18px">${topRow(stats.byRegime)}</div>
+                <div class="la-sub">Trend forte, moderada ou lateral</div>
+            </div>
+            <div class="live-audit-card">
+                <div class="la-label">Melhor Sessão</div>
+                <div class="la-value" style="color:#5eead4;font-size:18px">${topRow(stats.bySession)}</div>
+                <div class="la-sub">Sessão com melhor consistência</div>
+            </div>
+        `;
+    } catch (e) {
+        const panel = document.getElementById('live-audit-panel');
+        if (panel) panel.style.display = 'none';
     }
 }
 

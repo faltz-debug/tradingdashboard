@@ -907,6 +907,25 @@ async function checkAndSendAlerts(key, data) {
   // Se notícia de alto impacto está muito próxima (±30min), avisa mas NÃO bloqueia
   // O trader decide — mas a info vai no alert
 
+  const actionableLiveSignal = masterChanged && Math.abs(s.score) >= 2 && !filterBlock;
+  if (actionableLiveSignal) {
+    tradeStore.appendLiveSignal({
+      asset: key,
+      assetName: cfg.name,
+      tf: '15m',
+      emittedAt: now,
+      emittedCandleTime: candles15m[candles15m.length - 1]?.time,
+      entryPrice: s.price,
+      direction: s.score > 0 ? 'BUY' : 'SELL',
+      score: s.score,
+      rawScore: s.rawScore,
+      label: s.masterLabel,
+      audit: s.audit || null,
+      horizonCandles: 4,
+      source: 'live_master_signal',
+    });
+  }
+
   if ((masterChanged || reversalChanged) && cooldownOk && !filterBlock) {
     const header = masterChanged
       ? (prev ? `🔔 Sinal mudou: ${prev.masterLabel} → ${s.masterLabel}` : '🔔 Primeiro sinal detectado')
@@ -1935,6 +1954,22 @@ app.get('/api/analysis/:asset', rateLimit, async (req, res) => {
   }
 });
 
+app.get('/api/live-signals', rateLimit, (req, res) => {
+  const { asset, status, limit } = req.query;
+  const signals = tradeStore.listLiveSignals({
+    asset,
+    status,
+    limit: parseInt(limit, 10) || 100,
+  });
+  res.json({ success: true, count: signals.length, signals });
+});
+
+app.get('/api/live-signals/stats', rateLimit, (req, res) => {
+  const { asset } = req.query;
+  const stats = tradeStore.getLiveSignalStats({ asset });
+  res.json({ success: true, stats });
+});
+
 // ===== AUTO-REFRESH + ALERTAS =====
 // Com fontes real-time ativas, o ciclo roda a cada 5 min para processar alertas.
 // Yahoo Finance (sempre disponível) mantém ciclos de 5 min; OANDA mantém 2 min.
@@ -1945,6 +1980,9 @@ setInterval(async () => {
     try {
       const data = await getAsset(key);
       await checkAndSendAlerts(key, data);
+      if (data['15m']?.length) {
+        tradeStore.evaluateLiveSignals({ asset: key, candles: data['15m'], tf: '15m', horizonCandles: 4 });
+      }
 
       if (!data.isSimulation && !data.isMarketClosed) {
         try {

@@ -11,6 +11,7 @@ const path = require('path');
 const DATA_DIR   = path.join(__dirname, 'data');
 const STORE_FILE = path.join(DATA_DIR, 'vip_trades.json');
 const SIGNAL_FILE = path.join(DATA_DIR, 'vip_signals.json');
+const LIVE_SIGNAL_FILE = path.join(DATA_DIR, 'live_signal_audit.json');
 
 // Garante que o diretório data/ existe
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -28,6 +29,7 @@ function readJSON(file, fallback) {
 
 let _saveTradeTimer = null;
 let _saveSignalTimer = null;
+let _saveLiveSignalTimer = null;
 
 function writeJSON(file, data, timerRef, setTimer) {
   if (timerRef) clearTimeout(timerRef);
@@ -42,17 +44,22 @@ function writeJSON(file, data, timerRef, setTimer) {
 // ===== ESTADO EM MEMÓRIA =====
 let _trades  = readJSON(STORE_FILE,  { open: [], closed: [] });
 let _signals = readJSON(SIGNAL_FILE, []);
+let _liveSignals = readJSON(LIVE_SIGNAL_FILE, []);
 
 // Garante estrutura mínima
 if (!_trades.open)   _trades.open   = [];
 if (!_trades.closed) _trades.closed = [];
 if (!Array.isArray(_signals)) _signals = [];
+if (!Array.isArray(_liveSignals)) _liveSignals = [];
 
 function persistTrades() {
   writeJSON(STORE_FILE, _trades, _saveTradeTimer, (t) => { _saveTradeTimer = t; });
 }
 function persistSignals() {
   writeJSON(SIGNAL_FILE, _signals, _saveSignalTimer, (t) => { _saveSignalTimer = t; });
+}
+function persistLiveSignals() {
+  writeJSON(LIVE_SIGNAL_FILE, _liveSignals, _saveLiveSignalTimer, (t) => { _saveLiveSignalTimer = t; });
 }
 
 // ===== SINAIS VIP =====
@@ -75,6 +82,121 @@ function listSignals({ asset, status, limit = 100 } = {}) {
   if (asset)  items = items.filter(s => s.asset  === asset);
   if (status) items = items.filter(s => s.status === status);
   return items.slice(0, limit);
+}
+
+// ===== SINAIS AO VIVO AUDITÁVEIS =====
+function appendLiveSignal(signalObj) {
+  const duplicate = _liveSignals.find(s =>
+    s.asset === signalObj.asset &&
+    s.tf === signalObj.tf &&
+    s.label === signalObj.label &&
+    s.emittedCandleTime === signalObj.emittedCandleTime
+  );
+  if (duplicate) return duplicate;
+
+  const item = {
+    id: `live-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    createdAt: Date.now(),
+    ...signalObj,
+    evaluation: {
+      status: 'PENDING',
+      horizonCandles: signalObj.horizonCandles || 4,
+      evaluatedAt: null,
+      evaluationPrice: null,
+      evaluationCandleTime: null,
+      realizedPct: null,
+      candlesElapsed: null,
+    }
+  };
+
+  _liveSignals.unshift(item);
+  if (_liveSignals.length > 3000) _liveSignals.length = 3000;
+  persistLiveSignals();
+  return item;
+}
+
+function evaluateLiveSignals({ asset, candles, tf = '15m', horizonCandles = 4 } = {}) {
+  if (!asset || !Array.isArray(candles) || !candles.length) return 0;
+  const indexByTime = new Map(candles.map((c, i) => [c.time, i]));
+  let updates = 0;
+
+  for (const item of _liveSignals) {
+    if (item.asset !== asset || item.tf !== tf) continue;
+    if (item.evaluation?.status !== 'PENDING') continue;
+
+    const entryIdx = indexByTime.get(item.emittedCandleTime);
+    if (entryIdx == null) continue;
+
+    const horizon = item.evaluation?.horizonCandles || horizonCandles;
+    const targetIdx = entryIdx + horizon;
+    if (targetIdx >= candles.length) continue;
+
+    const target = candles[targetIdx];
+    const rawPct = item.direction === 'BUY'
+      ? ((target.close - item.entryPrice) / item.entryPrice) * 100
+      : ((item.entryPrice - target.close) / item.entryPrice) * 100;
+
+    item.evaluation.status = rawPct > 0 ? 'WIN' : rawPct < 0 ? 'LOSS' : 'FLAT';
+    item.evaluation.evaluatedAt = Date.now();
+    item.evaluation.evaluationPrice = target.close;
+    item.evaluation.evaluationCandleTime = target.time;
+    item.evaluation.realizedPct = parseFloat(rawPct.toFixed(4));
+    item.evaluation.candlesElapsed = horizon;
+    updates++;
+  }
+
+  if (updates) persistLiveSignals();
+  return updates;
+}
+
+function listLiveSignals({ asset, status, limit = 100 } = {}) {
+  let items = _liveSignals;
+  if (asset) items = items.filter(s => s.asset === asset);
+  if (status) items = items.filter(s => (s.evaluation?.status || 'PENDING') === status);
+  return items.slice(0, limit);
+}
+
+function getLiveSignalStats({ asset } = {}) {
+  let items = _liveSignals;
+  if (asset) items = items.filter(s => s.asset === asset);
+
+  const resolved = items.filter(s => s.evaluation?.status && s.evaluation.status !== 'PENDING');
+  const wins = resolved.filter(s => s.evaluation.status === 'WIN');
+  const losses = resolved.filter(s => s.evaluation.status === 'LOSS');
+  const flats = resolved.filter(s => s.evaluation.status === 'FLAT');
+
+  const groupMetric = (keyFn) => {
+    const map = {};
+    resolved.forEach(item => {
+      const key = keyFn(item) || 'N/A';
+      if (!map[key]) map[key] = { total: 0, wins: 0, losses: 0, flats: 0, sumPct: 0 };
+      map[key].total++;
+      if (item.evaluation.status === 'WIN') map[key].wins++;
+      else if (item.evaluation.status === 'LOSS') map[key].losses++;
+      else map[key].flats++;
+      map[key].sumPct += item.evaluation.realizedPct || 0;
+    });
+    Object.values(map).forEach(row => {
+      row.winRate = row.total ? parseFloat(((row.wins / row.total) * 100).toFixed(1)) : 0;
+      row.sumPct = parseFloat(row.sumPct.toFixed(2));
+    });
+    return map;
+  };
+
+  return {
+    totalSignals: items.length,
+    pending: items.filter(s => s.evaluation?.status === 'PENDING').length,
+    evaluated: resolved.length,
+    winRate: resolved.length ? parseFloat(((wins.length / resolved.length) * 100).toFixed(1)) : 0,
+    wins: wins.length,
+    losses: losses.length,
+    flats: flats.length,
+    avgPct: resolved.length ? parseFloat((resolved.reduce((a, s) => a + (s.evaluation.realizedPct || 0), 0) / resolved.length).toFixed(3)) : 0,
+    byAsset: groupMetric(item => item.asset),
+    byRegime: groupMetric(item => item.audit?.regime),
+    bySession: groupMetric(item => item.audit?.session?.label),
+    byDirection: groupMetric(item => item.direction),
+  };
 }
 
 // ===== TRADES =====
@@ -224,4 +346,15 @@ function getStats({ asset } = {}) {
   };
 }
 
-module.exports = { openTrade, closeTrade, listTrades, getStats, appendSignal, listSignals };
+module.exports = {
+  openTrade,
+  closeTrade,
+  listTrades,
+  getStats,
+  appendSignal,
+  listSignals,
+  appendLiveSignal,
+  evaluateLiveSignals,
+  listLiveSignals,
+  getLiveSignalStats,
+};
