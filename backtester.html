@@ -858,6 +858,70 @@ function isNewsBlackoutTime(timestampSec) {
     return false;
 }
 
+const MASTER_SIGNAL_CFG = {
+    breakoutLookback: 20,
+    rsiBullish: 55,
+    rsiBearish: 45,
+    adxTrendMin: 25,
+    stopAtrMult: 1.5,
+    takeAtrMult: 3.0,
+};
+
+function classifyMasterSignal(score) {
+    if (score >= 3) return { label: 'FORTE COMPRA', bias: 'LONG' };
+    if (score === 2) return { label: 'COMPRA MODERADA', bias: 'LONG' };
+    if (score <= -3) return { label: 'FORTE VENDA', bias: 'SHORT' };
+    if (score === -2) return { label: 'VENDA MODERADA', bias: 'SHORT' };
+    return { label: 'NEUTRO', bias: 'FLAT' };
+}
+
+function getMasterSignalSnapshot(candles, indicators, i, asset) {
+    const { e9, e20, e50, rsi, atr, adx } = indicators;
+    const candle = candles[i];
+    const price = candle.close;
+
+    const trendSig = e9[i] > e20[i] && e20[i] > e50[i] ? 'COMPRA'
+        : e9[i] < e20[i] && e20[i] < e50[i] ? 'VENDA'
+        : 'NEUTRO';
+
+    const rsiTrendSig = rsi[i] > MASTER_SIGNAL_CFG.rsiBullish ? 'COMPRA'
+        : rsi[i] < MASTER_SIGNAL_CFG.rsiBearish ? 'VENDA'
+        : 'NEUTRO';
+
+    const prev = candles.slice(Math.max(0, i - MASTER_SIGNAL_CFG.breakoutLookback), i);
+    const high20 = prev.length ? Math.max(...prev.map(c => c.high)) : price;
+    const low20 = prev.length ? Math.min(...prev.map(c => c.low)) : price;
+    const bkSig = price > high20 ? 'COMPRA' : price < low20 ? 'VENDA' : 'AGUARDAR';
+
+    const sigMap = { COMPRA: 1, VENDA: -1 };
+    const rawScore = [trendSig, rsiTrendSig, bkSig].map(s => sigMap[s] || 0).reduce((a, b) => a + b, 0);
+    const adxValue = adx[i] || 0;
+    const adxOk = adxValue >= MASTER_SIGNAL_CFG.adxTrendMin;
+    const score = adxOk ? rawScore : rawScore > 0 ? 1 : rawScore < 0 ? -1 : 0;
+    const classification = classifyMasterSignal(score);
+    const tradableScore = rawScore === 3 || rawScore === -3;
+    const isTradable = tradableScore
+        && adxOk
+        && !!atr[i]
+        && isGoodSession(candle.time, asset)
+        && !isNewsBlackoutTime(candle.time);
+
+    return {
+        price,
+        atr: atr[i],
+        adx: adxValue,
+        adxOk,
+        trendSig,
+        rsiTrendSig,
+        bkSig,
+        rawScore,
+        score,
+        label: classification.label,
+        bias: classification.bias,
+        isTradable,
+    };
+}
+
 /// ─── HELPER: calcula lucro líquido (descontando spread + comissão round-trip) ───
 // currentAsset é preenchido por runBacktest() antes de chamar strat.run()
 let _currentAsset = 'xau';
@@ -880,7 +944,7 @@ const STRATEGIES = {
             <b>Compra:</b> EMA9 &gt; EMA20 &gt; EMA50 + RSI &gt; 55 + breakout das últimas 20 velas + ADX &ge; 25<br>
             <b>Venda:</b> EMA9 &lt; EMA20 &lt; EMA50 + RSI &lt; 45 + breakdown das últimas 20 velas + ADX &ge; 25<br>
             &nbsp;&nbsp;&nbsp;→ Stop = 1.5×ATR &nbsp;|&nbsp; Alvo = 3×ATR &nbsp;|&nbsp; Saída antecipada se o score perder força<br><br>
-            <i>Replica o núcleo direcional do servidor e agora também respeita sessão, blackout de notícia e saída só após a vela de entrada.</i>
+            <i>Replica o núcleo direcional do servidor, incluindo o rebaixamento por ADX baixo, e respeita sessão, blackout de notícia e saída só após a vela de entrada.</i>
         `,
         hasSL: true,
         run(candles, biasCandles, asset) {
@@ -892,40 +956,29 @@ const STRATEGIES = {
             const trades = [];
             let inTrade = false, tradeType = '', entryIdx = 0, entryPrice = 0, slPrice = 0, tpPrice = 0;
             let entryBarIdx = -1;
-
-            const getScore = (i) => {
-                const trendSig = e9[i] > e20[i] && e20[i] > e50[i] ? 1 : e9[i] < e20[i] && e20[i] < e50[i] ? -1 : 0;
-                const rsiSig = rsi[i] > 55 ? 1 : rsi[i] < 45 ? -1 : 0;
-                const prev = candles.slice(Math.max(0, i - 20), i);
-                const high20 = prev.length ? Math.max(...prev.map(c => c.high)) : candles[i].close;
-                const low20 = prev.length ? Math.min(...prev.map(c => c.low)) : candles[i].close;
-                const breakoutSig = candles[i].close > high20 ? 1 : candles[i].close < low20 ? -1 : 0;
-                return trendSig + rsiSig + breakoutSig;
-            };
+            const indicators = { e9, e20, e50, rsi, atr, adx };
 
             for (let i = 55; i < candles.length; i++) {
-                const score = getScore(i);
                 const c = candles[i];
+                const signal = getMasterSignalSnapshot(candles, indicators, i, asset);
 
                 if (!inTrade) {
-                    if (!isGoodSession(c.time, asset)) continue;
-                    if (isNewsBlackoutTime(c.time)) continue;
-                    if (!adx[i] || adx[i] < 25 || !atr[i]) continue;
-                    if (score === 3) {
+                    if (!signal.isTradable) continue;
+                    if (signal.rawScore === 3) {
                         entryPrice = c.close;
-                        slPrice = entryPrice - 1.5 * atr[i];
-                        tpPrice = entryPrice + 3 * atr[i];
+                        slPrice = entryPrice - MASTER_SIGNAL_CFG.stopAtrMult * signal.atr;
+                        tpPrice = entryPrice + MASTER_SIGNAL_CFG.takeAtrMult * signal.atr;
                         inTrade = true; tradeType = 'COMPRA'; entryIdx = i; entryBarIdx = i;
-                    } else if (score === -3) {
+                    } else if (signal.rawScore === -3) {
                         entryPrice = c.close;
-                        slPrice = entryPrice + 1.5 * atr[i];
-                        tpPrice = entryPrice - 3 * atr[i];
+                        slPrice = entryPrice + MASTER_SIGNAL_CFG.stopAtrMult * signal.atr;
+                        tpPrice = entryPrice - MASTER_SIGNAL_CFG.takeAtrMult * signal.atr;
                         inTrade = true; tradeType = 'VENDA'; entryIdx = i; entryBarIdx = i;
                     }
                 } else {
                     if (i <= entryBarIdx) continue;
                     let exit = false, exitPrice = c.close;
-                    const scoreWeak = tradeType === 'COMPRA' ? score <= 0 : score >= 0;
+                    const scoreWeak = tradeType === 'COMPRA' ? signal.score <= 0 : signal.score >= 0;
 
                     if (tradeType === 'COMPRA') {
                         if (c.low <= slPrice) { exit = true; exitPrice = slPrice; }
