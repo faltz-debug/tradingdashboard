@@ -570,6 +570,8 @@ async function runScan() {
       const status = s.status || 'NO_SIGNAL';
       const dir    = s.direction || 'NEUTRAL';
       const scoreStr = s.score != null ? `${s.score}/7 • ADX ${s.adx != null ? fmtNum(s.adx,1) : '—'}` : '—';
+      const op = s.operationalContext || null;
+      const opColor = op?.status === 'OPERAR' ? 'var(--green)' : op?.status === 'EVITAR' ? 'var(--red)' : 'var(--gold)';
       card.className = `scanner-card ${status}`;
       const sel = document.getElementById('selAsset').value;
       if (key === sel) card.classList.add('selected');
@@ -577,6 +579,7 @@ async function runScan() {
         <div>
           <div class="sc-name">${sanitize(s.name || key.toUpperCase())}</div>
           <div class="sc-score">${sanitize(scoreStr)}</div>
+          <div class="sc-score" style="margin-top:3px;color:${opColor}">${sanitize(op?.status || 'CAUTELA')}</div>
         </div>
         <div style="margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:3px">
           <span class="sc-badge ${sanitize(status)}">${sanitize(statusLabels[status] || status)}</span>
@@ -669,6 +672,10 @@ function renderSignal(data) {
     NO_SIGNAL: '⏸ Sem Sinal', NEWS_BLOCKED: '🚫 Bloqueado por Notícia',
     NO_BIAS: '🔵 Sem Tendência', INSUFFICIENT_DATA: '📡 Dados Insuficientes',
   };
+  const op = data.operationalContext || null;
+  const opColor = op?.status === 'OPERAR' ? 'var(--green)' : op?.status === 'EVITAR' ? 'var(--red)' : 'var(--gold)';
+  const opBg = op?.status === 'OPERAR' ? 'rgba(38,166,154,.12)' : op?.status === 'EVITAR' ? 'rgba(239,83,80,.12)' : 'rgba(240,180,41,.10)';
+  const opBorder = op?.status === 'OPERAR' ? 'rgba(38,166,154,.35)' : op?.status === 'EVITAR' ? 'rgba(239,83,80,.35)' : 'rgba(240,180,41,.30)';
 
   // ── Hero ──
   const hero = document.getElementById('statusHero');
@@ -681,7 +688,10 @@ function renderSignal(data) {
       <div class="score-val">${data.score || 0}<span style="font-size:14px;color:var(--muted)">/7</span></div>
       <div class="score-label">Score</div>
     </div>
-    <div class="reason-text">${sanitize(data.meta?.reason || '')}</div>
+    <div class="reason-text">
+      ${sanitize(data.meta?.reason || '')}
+      ${op ? `<div style="margin-top:8px;padding:10px 14px;background:${opBg};border:1px solid ${opBorder};border-radius:10px;color:${opColor};font-weight:700">${sanitize(op.status)} — ${sanitize(op.summary)}<div style="margin-top:4px;font-size:12px;font-weight:400;color:var(--text)">${sanitize(op.detail)}</div></div>` : ''}
+    </div>
   `;
 
   // ── Checklist ──
@@ -709,6 +719,11 @@ function renderSignal(data) {
       desc: f.newsBlocked && data.meta?.newsInfo ? `${sanitize(data.meta.newsInfo.name)} — ${sanitize(data.meta.newsInfo.timeStr)}` : 'Janela livre de eventos',
       pass: !f.newsBlocked, cls: f.newsBlocked ? 'warn' : 'pass',
       value: f.newsBlocked ? '🚫 Bloqueado' : 'Livre ✅' },
+    { label: 'Contexto Operacional', weight: 'histórico',
+      desc: op?.detail || 'Sem amostra histórica suficiente para classificar o contexto',
+      pass: op?.status === 'OPERAR',
+      cls: op?.status === 'EVITAR' ? 'fail' : op?.status === 'OPERAR' ? 'pass' : 'warn',
+      value: op ? `${op.status} • ${op.summary}` : 'CAUTELA' },
   ];
 
   document.getElementById('checklist').innerHTML = checks.map(c => {

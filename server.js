@@ -647,6 +647,88 @@ function buildSignalAudit(signal, assetKey) {
   };
 }
 
+function getOperationalContext(assetKey, signal) {
+  const fallback = {
+    status: 'CAUTELA',
+    summary: 'Operar com cautela',
+    detail: 'Histórico contextual ainda insuficiente para reforçar o sinal.',
+    contextLine: 'Sem amostra suficiente neste contexto',
+    rows: [],
+  };
+
+  if (!assetKey || !signal) return fallback;
+
+  const stats = tradeStore.getLiveSignalStats();
+  const audit = signal.audit || null;
+  const rows = [];
+  const assetRow = stats.byAsset?.[assetKey];
+  const regimeRow = stats.byRegime?.[audit?.regime];
+  const sessionRow = stats.bySession?.[audit?.session?.label];
+
+  if (assetRow) rows.push({ group: 'asset', label: 'ativo', name: assetKey.toUpperCase(), ...assetRow });
+  if (regimeRow) rows.push({ group: 'regime', label: 'regime', name: audit?.regime, ...regimeRow });
+  if (sessionRow) rows.push({ group: 'session', label: 'sessão', name: audit?.session?.label, ...sessionRow });
+
+  const weakRow = rows.find(r => r.health === 'WEAK');
+  const strongRow = rows
+    .filter(r => r.health === 'STRONG')
+    .sort((a, b) => (b.total - a.total) || (b.winRate - a.winRate))[0];
+  const mixedRow = rows
+    .filter(r => r.health === 'MIXED')
+    .sort((a, b) => (b.total - a.total) || (b.winRate - a.winRate))[0];
+  const lowSampleOnly = rows.length > 0 && rows.every(r => r.health === 'LOW_SAMPLE');
+
+  const blockers = [];
+  const cautions = [];
+
+  if ((signal.score || 0) === 0) blockers.push('Sem consenso entre os filtros');
+  if (audit?.news?.isBlocked) blockers.push('Notícia de alto impacto próxima');
+  if (weakRow) blockers.push(`Contexto historicamente fraco em ${weakRow.label}`);
+
+  if (!audit?.session?.isGood) cautions.push('Fora da sessão ideal');
+  if (audit?.regime === 'LATERAL' || audit?.regime === 'TREND_FRACA') cautions.push('Regime fraco ou lateral');
+  if (mixedRow) cautions.push(`Histórico misto em ${mixedRow.label}`);
+  if (!rows.length || lowSampleOnly) cautions.push('Amostra histórica insuficiente');
+  if (Math.abs(signal.score || 0) < 2) cautions.push('Score operacional ainda fraco');
+
+  if (blockers.length) {
+    const main = weakRow
+      ? `${weakRow.label} ${weakRow.name} com WR ${weakRow.winRate}% em ${weakRow.total} sinais`
+      : blockers[0];
+    return {
+      status: 'EVITAR',
+      summary: 'Evitar entrada agora',
+      detail: main,
+      contextLine: blockers.join(' | '),
+      rows,
+    };
+  }
+
+  const highConviction = Math.abs(signal.score || 0) >= 2
+    && !!strongRow
+    && audit?.session?.isGood
+    && !audit?.news?.isBlocked
+    && ['TREND_FORTE', 'TREND_MODERADA'].includes(audit?.regime);
+
+  if (highConviction) {
+    return {
+      status: 'OPERAR',
+      summary: 'Contexto favorável para operar',
+      detail: `${strongRow.label} ${strongRow.name} com WR ${strongRow.winRate}% em ${strongRow.total} sinais`,
+      contextLine: `Histórico forte neste contexto | ${strongRow.label} ${strongRow.name}`,
+      rows,
+    };
+  }
+
+  return {
+    status: 'CAUTELA',
+    summary: 'Operar com cautela',
+    detail: cautions[0] || 'O sinal existe, mas o contexto ainda não é dos melhores.',
+    contextLine: cautions.join(' | ') || 'Contexto misto ou amostra reduzida',
+    rows,
+  };
+}
+
 function computeSignals(candles15m, assetName, dec, tf = '15M') {
   const closes = candles15m.map(c => c.close);
   const last   = closes.length - 1;
@@ -730,7 +812,10 @@ function computeSignals(candles15m, assetName, dec, tf = '15M') {
     adx, pdi, mdi, adxTrend, adxOk, adxDir,
     sr, div
   };
-  if (assetKey) signal.audit = buildSignalAudit(signal, assetKey);
+  if (assetKey) {
+    signal.audit = buildSignalAudit(signal, assetKey);
+    signal.operationalContext = getOperationalContext(assetKey, signal);
+  }
 
   return signal;
 }
@@ -777,6 +862,11 @@ function buildTelegramMessage(s, sessionInfo, newsInfo) {
     msg += `  Regime: ${s.audit.regime} | Score bruto: ${s.audit.scoreBeforeAdx > 0 ? '+' : ''}${s.audit.scoreBeforeAdx} | Final: ${s.audit.scoreAfterAdx > 0 ? '+' : ''}${s.audit.scoreAfterAdx}\n`;
     msg += `  Sessão: ${s.audit.session.label} | News: ${s.audit.news.isBlocked ? 'BLOQUEADA' : 'LIVRE'}\n`;
     msg += `  Bloqueios: ${blockers}\n`;
+  }
+  if (s.operationalContext) {
+    msg += `\n🧭 <b>Contexto Operacional:</b>\n`;
+    msg += `  ${s.operationalContext.status} | ${s.operationalContext.summary}\n`;
+    msg += `  ${s.operationalContext.detail}\n`;
   }
 
   // Níveis de operação
@@ -1632,8 +1722,18 @@ async function computeVipSignal(assetKey, entryTf = '15m', biasTf = '1h', { skip
       price:   parseFloat(entry.toFixed(cfg.decimals)),
       newsInfo: newsBlocked ? { name: newsInfo.nearName, timeStr: newsInfo.nearTimeStr } : null,
     },
+    operationalContext: null,
     generatedAt: Date.now(),
   };
+
+  result.operationalContext = getOperationalContext(assetKey, {
+    score,
+    audit: {
+      regime: adx >= 40 ? 'TREND_FORTE' : adx >= 25 ? 'TREND_MODERADA' : adx >= 15 ? 'TREND_FRACA' : 'LATERAL',
+      session: { isGood: filterSession, label: sessionInfo.sessionStr },
+      news: { isBlocked: newsBlocked, name: newsInfo.nearName, time: newsInfo.nearTimeStr },
+    }
+  });
 
   // Scan mode: não grava no histórico nem envia Telegram
   if (!skipPersist) {
@@ -1671,6 +1771,10 @@ async function computeVipSignal(assetKey, entryTf = '15m', biasTf = '1h', { skip
       `${f.adxOk       ? '✅' : '❌'} ADX ${result.meta.adx} (≥25)`,
       `${f.sessionOk   ? '✅' : '❌'} Sessão: ${result.meta.session}`,
       `${!f.newsBlocked ? '✅' : '⚠️'} Notícias: ${f.newsBlocked ? 'BLOQUEADO' : 'Livre'}`,
+      ``,
+      `🧭 <b>Contexto Operacional</b>`,
+      `${result.operationalContext.status} — ${result.operationalContext.summary}`,
+      `${result.operationalContext.detail}`,
       ``,
       `Bias: ${biasTf.toUpperCase()}  |  Entry: ${entryTf.toUpperCase()}`,
     ].join('\n');
@@ -1801,6 +1905,7 @@ app.get('/api/vip/scan', rateLimit, vipAuth, async (req, res) => {
         session:   sig.meta?.session,
         price:     sig.meta?.price,
         levels:    sig.levels,
+        operationalContext: sig.operationalContext || null,
       };
     } catch (e) {
       results[key] = { asset: key, name: ASSETS[key].name, status: 'ERROR', score: 0, error: e.message };
