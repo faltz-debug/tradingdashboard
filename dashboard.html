@@ -1232,7 +1232,29 @@ function renderPrices(asset) {
     varEl.className   = 'value ' + (chg >= 0 ? 'up' : 'down');
 
     document.getElementById(asset + '-tf-label').textContent = s.tf.toUpperCase();
-    document.getElementById(asset + '-updated').textContent  = new Date().toLocaleTimeString('pt-BR') + ' (local)';
+
+    // Freshness: usa updatedAt real do servidor (ms), não horário local do browser
+    const updatedEl = document.getElementById(asset + '-updated');
+    const updatedAt = s.data?.updatedAt;
+    if (updatedAt) {
+        const agoMs  = Date.now() - updatedAt;
+        const agoMin = Math.floor(agoMs / 60000);
+        const agoSec = Math.floor((agoMs % 60000) / 1000);
+        const timeStr = new Date(updatedAt).toLocaleTimeString('pt-BR');
+        // Stale: dados com mais de 15 min são sinalizados em amarelo/vermelho
+        const isStale  = agoMin >= 15;
+        const isExpired = agoMin >= 30;
+        const color = isExpired ? '#ff3355' : isStale ? '#ffaa00' : '#00ff41';
+        const icon  = isExpired ? '⚠️' : isStale ? '🟡' : '🟢';
+        const label = agoMin === 0
+            ? `${icon} ${agoSec}s atrás (${timeStr})`
+            : `${icon} ${agoMin}min atrás (${timeStr})`;
+        updatedEl.textContent = label;
+        updatedEl.style.color = color;
+    } else {
+        updatedEl.textContent = new Date().toLocaleTimeString('pt-BR') + ' (local)';
+        updatedEl.style.color = '#64748b';
+    }
 }
 
 function renderIndicators(asset) {
@@ -2536,8 +2558,9 @@ function updateUpdateStatus() {
     el.textContent = `Atualizado ${agoText} · próximo ${nextText}`;
 }
 
-// Contador atualiza a cada 60s sem chamar a API
+// Contador atualiza a cada 30s sem chamar a API
 setInterval(updateUpdateStatus, 60 * 1000);
+setInterval(() => ['xau','btc','eur','jpy'].forEach(a => { if (state[a].data) renderPrices(a); }), 30 * 1000);
 
 function updateDataSourceBanner() {
     const assets = [state.xau, state.btc, state.eur, state.jpy];

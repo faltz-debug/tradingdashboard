@@ -140,6 +140,34 @@ function saveLastSignals() {
 // Guarda o último sinal enviado por ativo (evita mensagens repetidas)
 const lastSignals = loadLastSignals();
 
+// ===== RETRY COM BACKOFF EXPONENCIAL =====
+// Envolve qualquer chamada axios em lógica de retry automático.
+// Tenta até `maxRetries` vezes com espera crescente entre tentativas.
+// Erros 4xx (exceto 429) não são retentados — são falhas definitivas.
+async function axiosWithRetry(fn, { maxRetries = 3, baseDelayMs = 1000, label = 'API' } = {}) {
+  let lastErr;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      const status = err.response?.status;
+      // 4xx (exceto 429 Too Many Requests) são erros definitivos — não adianta retentar
+      if (status && status >= 400 && status < 500 && status !== 429) {
+        console.warn(`⚠️  ${label}: erro ${status} — não vou retentar`);
+        throw err;
+      }
+      if (attempt < maxRetries) {
+        const delay = baseDelayMs * Math.pow(2, attempt - 1); // 1s, 2s, 4s
+        console.warn(`⚠️  ${label}: tentativa ${attempt}/${maxRetries} falhou (${err.message}) — aguardando ${delay}ms`);
+        await new Promise(r => setTimeout(r, delay));
+      }
+    }
+  }
+  console.error(`❌ ${label}: todas as ${maxRetries} tentativas falharam — ${lastErr.message}`);
+  throw lastErr;
+}
+
 async function sendTelegram(message) {
   if (!TELEGRAM_TOKEN || !TELEGRAM_CHAT_ID) return;
   try {
@@ -1201,10 +1229,13 @@ function agregateCandles(candles, periodSeconds) {
 const btcWsConnected = false; // mantido para compatibilidade com /api/health
 
 async function fetchBtcFromKraken() {
-  const res = await axios.get('https://api.kraken.com/0/public/OHLC', {
-    params: { pair: 'XBTUSD', interval: 15 }, // interval em minutos
-    timeout: 12000,
-  });
+  const res = await axiosWithRetry(
+    () => axios.get('https://api.kraken.com/0/public/OHLC', {
+      params: { pair: 'XBTUSD', interval: 15 },
+      timeout: 12000,
+    }),
+    { maxRetries: 3, baseDelayMs: 1500, label: 'Kraken(BTC)' }
+  );
   if (res.data.error?.length) throw new Error('Kraken: ' + res.data.error.join(', '));
 
   // Kraken retorna { result: { XXBTZUSD: [[time,open,high,low,close,vwap,volume,count], ...], last: N } }
@@ -1313,10 +1344,13 @@ async function pollOanda() {
 // ===== BUSCA TWELVE DATA =====
 async function fetchFromTwelveData(symbol) {
   // Busca velas de 15min — suficiente para agregar em 1h, 4h e daily
-  const res = await axios.get('https://api.twelvedata.com/time_series', {
-    params: { symbol, interval: '15min', outputsize: 600, apikey: TWELVE_DATA_KEY },
-    timeout: 10000
-  });
+  const res = await axiosWithRetry(
+    () => axios.get('https://api.twelvedata.com/time_series', {
+      params: { symbol, interval: '15min', outputsize: 600, apikey: TWELVE_DATA_KEY },
+      timeout: 10000,
+    }),
+    { maxRetries: 3, baseDelayMs: 2000, label: `TwelveData(${symbol})` }
+  );
   if (!res.data?.values?.length) throw new Error('Sem dados');
 
   const intervalMs = 15 * 60 * 1000;
@@ -1358,11 +1392,14 @@ async function fetchFromYahoo(assetKey) {
   const symbol = YAHOO_SYMBOLS[assetKey];
   if (!symbol) throw new Error(`Yahoo: símbolo não mapeado para ${assetKey}`);
 
-  const res = await axios.get(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}`, {
-    params:  { interval: '15m', range: '5d' },
-    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; TradingDashboard/1.0)' },
-    timeout: 12000,
-  });
+  const res = await axiosWithRetry(
+    () => axios.get(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}`, {
+      params:  { interval: '15m', range: '5d' },
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; TradingDashboard/1.0)' },
+      timeout: 12000,
+    }),
+    { maxRetries: 3, baseDelayMs: 1000, label: `Yahoo(${symbol})` }
+  );
 
   const chart = res.data?.chart?.result?.[0];
   if (!chart) throw new Error('Yahoo: sem dados na resposta');
