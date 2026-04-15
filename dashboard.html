@@ -1104,6 +1104,8 @@ function renderIndicators(asset) {
 function renderStrategies(asset) {
     const ind = getIndicators(asset);
     if (!ind) return;
+    const tfKey = { '15m': '15m', '1h': '1h', '4h': '4h', 'daily': 'daily' }[state[asset].tf] || '15m';
+    const srvSignal = state[asset].data?.signals?.[tfKey] || null;
     const { closes, candles, last, ema9: ema9arr, ema20: ema20arr, ema50: ema50arr, rsiArr, macd: macdData, bb: bbData, fmt, dec, price } = ind;
     const ema9    = ind.e9;
     const ema20   = ind.e20;
@@ -1390,10 +1392,12 @@ function renderStrategies(asset) {
     const signalMap  = { 'COMPRA': 1, 'VENDA': -1, 'TENDÊNCIA ↑': 1, 'TENDÊNCIA ↓': -1 };
     const cleanBkSig = bkSig.replace(/ [↑↓]/g, '').trim();
     const allSigs    = [trendSig, rsiMomentumSig, cleanBkSig];
-    const score      = allSigs.map(s => signalMap[s] || 0).reduce((a, b) => a + b, 0);
+    const localScore = allSigs.map(s => signalMap[s] || 0).reduce((a, b) => a + b, 0);
+    const score      = srvSignal?.score ?? localScore;
 
     // Score máx = 3: ≥3 → FORTE, ==2 → MODERADA, ≤1 → NEUTRO
-    const masterText  = score >= 3  ? '🟢 FORTE COMPRA'    :
+    const masterText  = srvSignal ? `${srvSignal.masterEmoji} ${srvSignal.masterLabel}` :
+                        score >= 3  ? '🟢 FORTE COMPRA'    :
                         score === 2 ? '🟡 COMPRA MODERADA' :
                         score <= -3 ? '🔴 FORTE VENDA'     :
                         score === -2? '🟠 VENDA MODERADA'  : '⚪ NEUTRO';
@@ -1418,6 +1422,7 @@ function renderStrategies(asset) {
         </div>`;
     }).join('');
 
+    const opCtx = getOperationalContext(asset, srvSignal || { score, audit: null });
     const scoreFill = Math.abs(score) / 3 * 100;
     const confidencePct = Math.round(Math.abs(score) / 3 * 100);
     document.getElementById(asset + '-master').innerHTML = `
@@ -1428,6 +1433,11 @@ function renderStrategies(asset) {
             <div style="flex:1;min-width:220px;text-align:center">
                 <div style="font-size:54px;font-weight:900;color:${masterColor};line-height:1.05;margin-bottom:10px;text-shadow:0 0 30px ${masterColor}44">${masterText}</div>
                 <div style="font-size:14px;color:#94a3b8;margin-bottom:18px;line-height:1.5">${masterSub}</div>
+                <div style="margin:0 auto 14px;max-width:520px;padding:10px 14px;background:${opCtx.bg};border:1px solid ${opCtx.border};border-radius:10px;text-align:left">
+                    <div style="font-size:13px;font-weight:700;color:${opCtx.color};margin-bottom:4px">${opCtx.icon} ${opCtx.status} — ${opCtx.summary}</div>
+                    <div style="font-size:11px;color:#cbd5e1;line-height:1.6">${opCtx.detail}</div>
+                    <div style="font-size:10px;color:${opCtx.color};margin-top:6px">${opCtx.contextLine}</div>
+                </div>
                 <div style="background:#0a0e1a;height:10px;border-radius:5px;overflow:hidden;margin:0 auto 6px;max-width:320px">
                     <div style="height:100%;width:${scoreFill}%;background:${masterColor};border-radius:5px;transition:width 0.4s;box-shadow:0 0 8px ${masterColor}88"></div>
                 </div>
@@ -2036,10 +2046,123 @@ async function loadLiveSignalStats() {
                 <div class="la-sub">${weakContext ? `WR ${weakContext.winRate}% • ${weakContext.total} sinais` : 'Sem contexto fraco validado'}</div>
             </div>
         `;
+
+        ['xau', 'btc', 'eur', 'jpy'].forEach(assetKey => {
+            if (state[assetKey]?.data?.success) renderStrategies(assetKey);
+        });
+        updateSignalBanner();
     } catch (e) {
         const panel = document.getElementById('live-audit-panel');
         if (panel) panel.style.display = 'none';
     }
+}
+
+function getContextRowsForCurrentSignal(asset, audit) {
+    if (!liveSignalStats || !audit) return [];
+    const groupLabels = {
+        asset: 'ativo',
+        regime: 'regime',
+        session: 'sessão',
+    };
+    const rows = [];
+    const assetRow = liveSignalStats.byAsset?.[asset];
+    const regimeRow = liveSignalStats.byRegime?.[audit.regime];
+    const sessionRow = liveSignalStats.bySession?.[audit.session?.label];
+
+    if (assetRow) rows.push({ group: 'asset', label: groupLabels.asset, name: asset.toUpperCase(), ...assetRow });
+    if (regimeRow) rows.push({ group: 'regime', label: groupLabels.regime, name: audit.regime, ...regimeRow });
+    if (sessionRow) rows.push({ group: 'session', label: groupLabels.session, name: audit.session?.label, ...sessionRow });
+
+    return rows;
+}
+
+function getOperationalContext(asset, signal) {
+    const fallback = {
+        status: 'CAUTELA',
+        color: '#ffaa00',
+        bg: 'rgba(255,170,0,0.08)',
+        border: '#ffaa0055',
+        icon: '⚠️',
+        summary: 'Operar com cautela',
+        detail: 'Histórico contextual ainda insuficiente para reforçar o sinal.',
+        contextLine: 'Sem amostra suficiente neste contexto',
+        rows: [],
+    };
+
+    if (!signal) return fallback;
+
+    const audit = signal.audit || null;
+    const rows = getContextRowsForCurrentSignal(asset, audit);
+    const weakRow = rows.find(r => r.health === 'WEAK');
+    const strongRow = rows
+        .filter(r => r.health === 'STRONG')
+        .sort((a, b) => (b.total - a.total) || (b.winRate - a.winRate))[0];
+    const mixedRow = rows
+        .filter(r => r.health === 'MIXED')
+        .sort((a, b) => (b.total - a.total) || (b.winRate - a.winRate))[0];
+    const lowSampleOnly = rows.length > 0 && rows.every(r => r.health === 'LOW_SAMPLE');
+
+    const blockers = [];
+    const cautions = [];
+
+    if ((signal.score || 0) === 0) blockers.push('Sem consenso entre os filtros');
+    if (audit?.news?.isBlocked) blockers.push('Notícia de alto impacto próxima');
+    if (weakRow) blockers.push(`Contexto historicamente fraco em ${weakRow.label}`);
+
+    if (!audit?.session?.isGood) cautions.push('Fora da sessão ideal');
+    if (audit?.regime === 'LATERAL' || audit?.regime === 'TREND_FRACA') cautions.push('Regime fraco ou lateral');
+    if (mixedRow) cautions.push(`Histórico misto em ${mixedRow.label}`);
+    if (!rows.length || lowSampleOnly) cautions.push('Amostra histórica insuficiente');
+    if (Math.abs(signal.score || 0) < 2) cautions.push('Score operacional ainda fraco');
+
+    if (blockers.length) {
+        const main = weakRow
+            ? `${weakRow.label} ${weakRow.name} com WR ${weakRow.winRate}% em ${weakRow.total} sinais`
+            : blockers[0];
+        return {
+            status: 'EVITAR',
+            color: '#ff3355',
+            bg: 'rgba(255,51,85,0.08)',
+            border: '#ff335555',
+            icon: '⛔',
+            summary: 'Evitar entrada agora',
+            detail: main,
+            contextLine: blockers.join(' • '),
+            rows,
+        };
+    }
+
+    const highConviction = Math.abs(signal.score || 0) >= 2
+        && !!strongRow
+        && audit?.session?.isGood
+        && !audit?.news?.isBlocked
+        && ['TREND_FORTE', 'TREND_MODERADA'].includes(audit?.regime);
+
+    if (highConviction) {
+        return {
+            status: 'OPERAR',
+            color: '#00ff41',
+            bg: 'rgba(0,255,65,0.08)',
+            border: '#00ff4155',
+            icon: '✅',
+            summary: 'Contexto favorável para operar',
+            detail: `${strongRow.label} ${strongRow.name} com WR ${strongRow.winRate}% em ${strongRow.total} sinais`,
+            contextLine: `Histórico forte neste contexto • ${strongRow.label} ${strongRow.name}`,
+            rows,
+        };
+    }
+
+    return {
+        status: 'CAUTELA',
+        color: '#ffaa00',
+        bg: 'rgba(255,170,0,0.08)',
+        border: '#ffaa0055',
+        icon: '⚠️',
+        summary: 'Operar com cautela',
+        detail: cautions[0] || 'O sinal existe, mas o contexto ainda não é dos melhores.',
+        contextLine: cautions.join(' • ') || 'Contexto misto ou amostra reduzida',
+        rows,
+    };
 }
 
 // Mostra "Atualizado X min atrás | próximo em Y min" baseado no updatedAt real do servidor
@@ -2184,27 +2307,7 @@ function updateSignalBanner() {
         const auditText = audit
             ? `${audit.regime} • ${audit.session?.label || '—'} • ${audit.news?.isBlocked ? 'news bloqueada' : 'news livre'}`
             : 'Auditoria indisponível';
-        let contextHealthText = 'Contexto sem histórico suficiente';
-        let contextHealthColor = '#64748b';
-        if (liveSignalStats && audit) {
-            const assetRow = liveSignalStats.byAsset?.[asset];
-            const regimeRow = liveSignalStats.byRegime?.[audit.regime];
-            const sessionRow = liveSignalStats.bySession?.[audit.session?.label];
-            const candidates = [assetRow, regimeRow, sessionRow].filter(Boolean);
-            const weak = candidates.find(r => r.health === 'WEAK');
-            const strong = candidates.find(r => r.health === 'STRONG');
-            if (weak) {
-                contextHealthText = `Contexto fraco no histórico • WR ${weak.winRate}%`;
-                contextHealthColor = '#ff3355';
-            } else if (strong) {
-                contextHealthText = `Contexto favorável no histórico • WR ${strong.winRate}%`;
-                contextHealthColor = '#00ff41';
-            } else if (candidates.some(r => r.health === 'MIXED')) {
-                const mixed = candidates.find(r => r.health === 'MIXED');
-                contextHealthText = `Contexto misto • WR ${mixed.winRate}%`;
-                contextHealthColor = '#ffaa00';
-            }
-        }
+        const opCtx = getOperationalContext(asset, srv);
 
         // Confluência de timeframes
         const conf  = srv.tfConfluence || ['15M'];
@@ -2225,7 +2328,7 @@ function updateSignalBanner() {
                     Score: ${score > 0 ? '+' : ''}${score}/3 &nbsp;|&nbsp; RSI: ${rsi?.toFixed(0) ?? '—'} &nbsp;|&nbsp; Preço: ${fmt(price)}
                 </div>
                 <div style="font-size:10px;color:#64748b;margin-top:4px">${auditText}</div>
-                <div style="font-size:10px;color:${contextHealthColor};margin-top:4px">${contextHealthText}</div>
+                <div style="font-size:10px;color:${opCtx.color};margin-top:4px">${opCtx.icon} ${opCtx.status} • ${opCtx.detail}</div>
             </div>`;
 
         // Notificação browser se sinal mudou
