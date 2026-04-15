@@ -199,6 +199,13 @@
     .meta-label { font-size: 10px; color: var(--muted); text-transform: uppercase; }
     .meta-value { font-size: 14px; font-weight: 700; color: var(--text); }
 
+    /* ── SIZING ── */
+    .sizing-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-top: 10px; }
+    .sizing-item { background: rgba(255,255,255,.04); border: 1px solid var(--border); border-radius: 10px; padding: 12px; text-align: center; }
+    .sizing-item .s-val { font-size: 20px; font-weight: 700; margin: 4px 0; }
+    .sizing-item .s-lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; }
+    .sizing-risk-bar { margin-top: 12px; padding: 10px 14px; border-radius: 8px; font-size: 12px; font-weight: 700; }
+
     /* ── TRADE FORM ── */
     .trade-form { display: flex; flex-direction: column; gap: 12px; }
     .form-row { display: flex; gap: 10px; flex-wrap: wrap; }
@@ -411,6 +418,24 @@
     </div>
   </div>
 
+  <!-- POSITION SIZING -->
+  <div class="card" id="sizingCard" style="display:none">
+    <div class="card-title">🧮 Position Sizing</div>
+    <div id="sizingBlock">
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+        <div class="form-group" style="flex:1;min-width:130px">
+          <label>Capital da Conta (USD)</label>
+          <input type="number" id="sCapital" value="1000" min="100" step="100" oninput="calcSizing()" />
+        </div>
+        <div class="form-group" style="flex:1;min-width:130px">
+          <label>Risco por Trade (%)</label>
+          <input type="number" id="sRiskPct" value="1" min="0.1" max="5" step="0.1" oninput="calcSizing()" />
+        </div>
+      </div>
+      <div id="sizingResult"></div>
+    </div>
+  </div>
+
   <!-- REGISTRAR TRADE -->
   <div class="card" id="tradeFormCard" style="display:none">
     <div class="card-title">📝 Registrar Trade</div>
@@ -496,6 +521,15 @@
 </div><!-- /container -->
 
 <script>
+// ── SIZING CONFIG ──
+// Tamanho do pip/tick por ativo — usado para converter risco em USD → lotes
+const ASSET_SIZING = {
+  xauusd: { pipValue: 1.0,    pipSize: 0.01,  unit: 'oz',    label: 'oz'     }, // 1 lote = 100oz, pip=$1/oz
+  btc:    { pipValue: 1.0,    pipSize: 1.0,   unit: 'BTC',   label: 'BTC'    }, // direto em USD
+  eurusd: { pipValue: 10.0,   pipSize: 0.0001,unit: 'lotes', label: 'lotes'  }, // 1 lote std = $10/pip
+  usdjpy: { pipValue: 9.1,    pipSize: 0.01,  unit: 'lotes', label: 'lotes'  }, // ~$9.1/pip (aprox)
+};
+
 // ── ESTADO ──
 let currentSignal = null;
 let closingTradeId = null;
@@ -669,6 +703,93 @@ async function loadSignal() {
   btn.textContent = '🔄 Atualizar';
 }
 
+// ── POSITION SIZING ──
+function calcSizing() {
+  const resultEl = document.getElementById('sizingResult');
+  if (!resultEl || !currentSignal?.levels) return;
+
+  const capital   = parseFloat(document.getElementById('sCapital')?.value) || 1000;
+  const riskPct   = parseFloat(document.getElementById('sRiskPct')?.value) || 1;
+  const asset     = document.getElementById('selAsset')?.value || 'xauusd';
+  const L         = currentSignal.levels;
+  const direction = currentSignal.direction || 'BUY';
+
+  // Aplica sizingMultiplier do riskState se disponível
+  const riskMult  = currentSignal.riskState?.sizingMultiplier ?? 1.0;
+  const adjRiskPct = riskPct * riskMult;
+
+  const riskUSD   = capital * (adjRiskPct / 100);             // USD em risco
+  const slDist    = Math.abs(L.entry - L.sl);                 // distância do SL em preço
+  if (!slDist || slDist <= 0) { resultEl.innerHTML = '<div style="color:var(--muted);font-size:12px">SL inválido — não é possível calcular sizing.</div>'; return; }
+
+  const cfg = ASSET_SIZING[asset] || ASSET_SIZING.eurusd;
+
+  // Cálculo de lotes/unidades
+  // Para forex: riskUSD / (slDist / pipSize * pipValue)
+  // Para XAU/BTC: riskUSD / slDist (direto em USD por unidade)
+  let lots, lotLabel;
+  if (asset === 'xauusd' || asset === 'btc') {
+    lots     = riskUSD / slDist;
+    lotLabel = cfg.label;
+  } else {
+    const pips = slDist / cfg.pipSize;
+    lots       = riskUSD / (pips * cfg.pipValue);
+    lotLabel   = cfg.label;
+  }
+
+  const lotsStd  = parseFloat(lots.toFixed(2));
+  const lotsMini = parseFloat((lots * 10).toFixed(2));   // mini lots
+  const lotsMicro= parseFloat((lots * 100).toFixed(2));  // micro lots
+  const tpUSD    = riskUSD * (L.rr || 2);               // ganho potencial
+
+  const riskColor  = adjRiskPct > 2 ? 'var(--red)' : adjRiskPct > 1 ? 'var(--gold)' : 'var(--green)';
+  const multLabel  = riskMult < 1
+    ? `<span style="color:var(--gold);font-size:10px">⚠️ Risco ajustado para ${Math.round(riskMult*100)}% pelo modo ${currentSignal.riskState?.level || 'de risco'}</span>`
+    : '';
+
+  resultEl.innerHTML = `
+    ${multLabel ? `<div style="margin-bottom:8px">${multLabel}</div>` : ''}
+    <div class="sizing-grid">
+      <div class="sizing-item">
+        <div class="s-lbl">Risco (USD)</div>
+        <div class="s-val" style="color:${riskColor}">$${riskUSD.toFixed(0)}</div>
+        <div class="s-lbl">${adjRiskPct.toFixed(2)}% do capital</div>
+      </div>
+      <div class="sizing-item">
+        <div class="s-lbl">Lotes Standard</div>
+        <div class="s-val" style="color:var(--text)">${lotsStd}</div>
+        <div class="s-lbl">${lotLabel}</div>
+      </div>
+      ${asset !== 'xauusd' && asset !== 'btc' ? `
+      <div class="sizing-item">
+        <div class="s-lbl">Mini Lotes</div>
+        <div class="s-val" style="color:var(--text)">${lotsMini}</div>
+        <div class="s-lbl">0.1 lote</div>
+      </div>
+      <div class="sizing-item">
+        <div class="s-lbl">Micro Lotes</div>
+        <div class="s-val" style="color:var(--text)">${lotsMicro}</div>
+        <div class="s-lbl">0.01 lote</div>
+      </div>` : ''}
+      <div class="sizing-item">
+        <div class="s-lbl">Ganho Potencial</div>
+        <div class="s-val" style="color:var(--green)">$${tpUSD.toFixed(0)}</div>
+        <div class="s-lbl">R:R 1:${L.rr || 2}</div>
+      </div>
+      <div class="sizing-item">
+        <div class="s-lbl">SL Distância</div>
+        <div class="s-val" style="color:var(--red)">${slDist.toFixed(getDecimals(asset))}</div>
+        <div class="s-lbl">pips / pts</div>
+      </div>
+    </div>
+    <div class="sizing-risk-bar" style="background:${adjRiskPct>2?'rgba(239,83,80,.10)':adjRiskPct>1?'rgba(240,180,41,.10)':'rgba(38,166,154,.10)'};border:1px solid ${riskColor}33;color:${riskColor}">
+      ${adjRiskPct > 2 ? '⚠️ Risco elevado — considere reduzir o tamanho da posição'
+        : adjRiskPct > 1 ? '⚡ Risco moderado — dentro do aceitável'
+        : '✅ Risco conservador'}
+    </div>
+  `;
+}
+
 function renderSignal(data) {
   if (!data || !data.success) {
     document.getElementById('statusBadge').className = 'status-badge NO_SIGNAL';
@@ -832,6 +953,17 @@ function renderSignal(data) {
     `;
   } else if (shCard) {
     shCard.style.display = 'none';
+  }
+
+  // ── Position Sizing ──
+  const scCard = document.getElementById('sizingCard');
+  if (scCard) {
+    if (data.levels) {
+      scCard.style.display = '';
+      calcSizing(); // auto-populate on signal load
+    } else {
+      scCard.style.display = 'none';
+    }
   }
 }
 
