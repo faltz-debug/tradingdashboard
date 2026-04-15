@@ -1014,6 +1014,7 @@ async function checkAndSendAlerts(key, data) {
       tpPrice: s.tp,
       rr: 2,
       audit: s.audit || null,
+      operationalContext: s.operationalContext || null,
       horizonCandles: 4,
       source: 'live_master_signal',
     });

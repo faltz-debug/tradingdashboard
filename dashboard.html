@@ -243,6 +243,83 @@
             margin-top: 6px;
             line-height: 1.6;
         }
+        .live-history-panel {
+            display: none;
+            margin-bottom: 24px;
+            background: #0d1526;
+            border: 1px solid #1e3a5f;
+            border-radius: 12px;
+            padding: 18px 20px;
+        }
+        .live-history-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 14px;
+            flex-wrap: wrap;
+        }
+        .live-history-title {
+            font-size: 12px;
+            font-weight: 700;
+            color: #00d4ff;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .live-history-list {
+            display: grid;
+            gap: 10px;
+        }
+        .live-history-item {
+            background: #070b14;
+            border: 1px solid #1e3a5f;
+            border-radius: 10px;
+            padding: 12px 14px;
+        }
+        .live-history-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 6px;
+        }
+        .live-history-main {
+            font-size: 13px;
+            color: #e2e8f0;
+            font-weight: 700;
+        }
+        .live-history-badges {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .lh-badge {
+            font-size: 10px;
+            padding: 3px 8px;
+            border-radius: 999px;
+            border: 1px solid #1e3a5f;
+            color: #94a3b8;
+            background: rgba(30,58,95,0.15);
+        }
+        .lh-badge.win { color: #00ff41; border-color: #00ff4144; background: rgba(0,255,65,0.08); }
+        .lh-badge.loss { color: #ff3355; border-color: #ff335544; background: rgba(255,51,85,0.08); }
+        .lh-badge.flat { color: #94a3b8; border-color: #64748b55; background: rgba(100,116,139,0.08); }
+        .lh-badge.pending { color: #ffaa00; border-color: #ffaa0044; background: rgba(255,170,0,0.08); }
+        .lh-badge.operar { color: #00ff41; border-color: #00ff4144; background: rgba(0,255,65,0.08); }
+        .lh-badge.cautela { color: #ffaa00; border-color: #ffaa0044; background: rgba(255,170,0,0.08); }
+        .lh-badge.evitar { color: #ff3355; border-color: #ff335544; background: rgba(255,51,85,0.08); }
+        .live-history-sub {
+            font-size: 10px;
+            color: #64748b;
+            line-height: 1.7;
+        }
+        .live-history-detail {
+            margin-top: 6px;
+            font-size: 11px;
+            color: #cbd5e1;
+            line-height: 1.6;
+        }
     </style>
 </head>
 <body>
@@ -351,6 +428,14 @@
             <div id="live-audit-meta" style="font-size:10px;color:#64748b">Avaliados após 4 candles de 15m</div>
         </div>
         <div class="live-audit-grid" id="live-audit-grid"></div>
+    </div>
+
+    <div class="live-history-panel" id="live-history-panel">
+        <div class="live-history-head">
+            <div class="live-history-title">🗂 Histórico dos Últimos Sinais Live</div>
+            <div id="live-history-meta" style="font-size:10px;color:#64748b">Lendo sinais emitidos pelo motor principal</div>
+        </div>
+        <div class="live-history-list" id="live-history-list"></div>
     </div>
 
     <!-- ASSET TABS -->
@@ -1969,6 +2054,7 @@ async function loadData() {
         updateDataSourceBanner();
         updateUpdateStatus();
         loadLiveSignalStats();
+        loadLiveSignalHistory();
     } catch (e) {
         document.getElementById('status-text').textContent = 'Erro de conexão';
         document.querySelector('.status-dot').style.background = '#ff3355';
@@ -2053,6 +2139,97 @@ async function loadLiveSignalStats() {
         updateSignalBanner();
     } catch (e) {
         const panel = document.getElementById('live-audit-panel');
+        if (panel) panel.style.display = 'none';
+    }
+}
+
+async function loadLiveSignalHistory() {
+    try {
+        const res = await fetch('/api/live-signals?limit=12');
+        const data = await res.json();
+        const signals = data?.signals || [];
+        const panel = document.getElementById('live-history-panel');
+        const list = document.getElementById('live-history-list');
+        const meta = document.getElementById('live-history-meta');
+        if (!panel || !list || !meta) return;
+
+        if (!signals.length) {
+            panel.style.display = '';
+            meta.textContent = 'Ainda sem sinais fortes/moderados registrados';
+            list.innerHTML = `<div class="live-history-item"><div class="live-history-detail">Aguardando o primeiro ciclo de sinais live para começar a auditar a assertividade real.</div></div>`;
+            return;
+        }
+
+        const fmtDate = (ts) => {
+            if (!ts) return '—';
+            return new Date(ts).toLocaleString('pt-BR', {
+                timeZone: 'America/Sao_Paulo',
+                day: '2-digit',
+                month: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+            });
+        };
+        const outcomeMap = {
+            WIN: { cls: 'win', label: 'WIN' },
+            LOSS: { cls: 'loss', label: 'LOSS' },
+            FLAT: { cls: 'flat', label: 'FLAT' },
+            PENDING: { cls: 'pending', label: 'PENDENTE' },
+        };
+        const opMap = {
+            OPERAR: 'operar',
+            CAUTELA: 'cautela',
+            EVITAR: 'evitar',
+        };
+        const assetLabel = {
+            xau: 'XAUUSD',
+            btc: 'BTCUSD',
+            eur: 'EURUSD',
+            jpy: 'USDJPY',
+            xauusd: 'XAUUSD',
+            eurusd: 'EURUSD',
+            usdjpy: 'USDJPY',
+        };
+
+        panel.style.display = '';
+        meta.textContent = `${signals.length} sinais recentes • com contexto e desfecho teórico`;
+
+        list.innerHTML = signals.map(item => {
+            const evalStatus = item.evaluation?.status || 'PENDING';
+            const outcome = outcomeMap[evalStatus] || outcomeMap.PENDING;
+            const op = item.operationalContext || null;
+            const opCls = opMap[op?.status] || 'cautela';
+            const pct = item.evaluation?.realizedPct;
+            const pctText = pct == null ? '—' : `${pct > 0 ? '+' : ''}${pct}%`;
+            const evaluationText = evalStatus === 'PENDING'
+                ? `Aguardando ${item.evaluation?.horizonCandles || 4} candles para avaliação`
+                : `${item.evaluation?.outcomeType || 'HORIZON'} • ${pctText}`;
+            const mainLabel = `${assetLabel[item.asset] || (item.assetName || item.asset || 'ATIVO')} • ${item.label || 'Sinal'} • ${item.direction || '—'}`;
+            const contextText = op
+                ? `${op.status} • ${op.summary}`
+                : 'CAUTELA • Contexto não registrado';
+            const detailText = op?.detail || item.audit?.regime || 'Sem detalhe contextual';
+            return `
+                <div class="live-history-item">
+                    <div class="live-history-top">
+                        <div class="live-history-main">${mainLabel}</div>
+                        <div class="live-history-badges">
+                            <span class="lh-badge ${outcome.cls}">${outcome.label}</span>
+                            <span class="lh-badge ${opCls}">${contextText}</span>
+                        </div>
+                    </div>
+                    <div class="live-history-sub">
+                        Emitido: ${fmtDate(item.emittedAt)} • Entrada: ${item.entryPrice ?? '—'} • Score: ${item.score > 0 ? '+' : ''}${item.score ?? '—'} • Regime: ${item.audit?.regime || '—'} • Sessão: ${item.audit?.session?.label || '—'}
+                    </div>
+                    <div class="live-history-detail">
+                        ${detailText}<br>
+                        ${evaluationText}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    } catch (e) {
+        const panel = document.getElementById('live-history-panel');
         if (panel) panel.style.display = 'none';
     }
 }
