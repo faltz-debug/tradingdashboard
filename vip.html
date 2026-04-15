@@ -60,6 +60,7 @@
     .scanner-card.selected { border-color: var(--gold); background: rgba(240,180,41,.06); }
     .scanner-card.VALID_SIGNAL  { border-color: var(--green); background: rgba(38,166,154,.08); }
     .scanner-card.PARTIAL_SIGNAL{ border-color: var(--gold);  background: rgba(240,180,41,.06); }
+    .scanner-card.CONTEXT_BLOCKED { border-color: var(--red); background: rgba(239,83,80,.08); }
     .sc-name  { font-weight: 700; font-size: 12px; }
     .sc-score { font-size: 11px; color: var(--muted); }
     .sc-dir   { font-size: 11px; font-weight: 700; }
@@ -77,6 +78,7 @@
     .sc-badge.PARTIAL_SIGNAL { background: rgba(240,180,41,.2);  color: var(--gold); }
     .sc-badge.NO_SIGNAL      { background: rgba(102,102,102,.15);color: var(--muted); }
     .sc-badge.NEWS_BLOCKED   { background: rgba(239,83,80,.15);  color: var(--red); }
+    .sc-badge.CONTEXT_BLOCKED{ background: rgba(239,83,80,.15);  color: var(--red); }
     .sc-badge.NO_BIAS        { background: rgba(92,158,255,.12); color: var(--blue); }
     .sc-badge.loading        { background: rgba(102,102,102,.1); color: var(--muted); }
     .sc-badge.ERROR          { background: rgba(239,83,80,.1);   color: var(--red); }
@@ -150,6 +152,7 @@
     .status-badge.PARTIAL_SIGNAL { background: rgba(240,180,41,.12); color: var(--gold);  border: 1px solid var(--gold); }
     .status-badge.NO_SIGNAL      { background: rgba(102,102,102,.12);color: var(--muted); border: 1px solid var(--border); }
     .status-badge.NEWS_BLOCKED   { background: rgba(239,83,80,.12);  color: var(--red);   border: 1px solid var(--red); }
+    .status-badge.CONTEXT_BLOCKED{ background: rgba(239,83,80,.12);  color: var(--red);   border: 1px solid var(--red); }
     .status-badge.NO_BIAS        { background: rgba(92,158,255,.10); color: var(--blue);  border: 1px solid var(--blue); }
     .status-badge.loading        { background: rgba(102,102,102,.08);color: var(--muted); border: 1px solid var(--border); }
 
@@ -270,6 +273,7 @@
     .sig-status.PARTIAL_SIGNAL { background: rgba(240,180,41,.12);  color: var(--gold); }
     .sig-status.NO_SIGNAL      { background: rgba(136,136,136,.12); color: var(--muted); }
     .sig-status.NEWS_BLOCKED   { background: rgba(239,83,80,.12);   color: var(--red); }
+    .sig-status.CONTEXT_BLOCKED{ background: rgba(239,83,80,.12);   color: var(--red); }
     .sig-status.NO_BIAS        { background: rgba(92,158,255,.10);  color: var(--blue); }
 
     .tag { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 600; }
@@ -465,6 +469,7 @@
           <option value="PARTIAL_SIGNAL">Sinal Parcial</option>
           <option value="NO_SIGNAL">Sem Sinal</option>
           <option value="NEWS_BLOCKED">Bloqueado (News)</option>
+          <option value="CONTEXT_BLOCKED">Bloqueado (Contexto)</option>
           <option value="NO_BIAS">Sem Tendência</option>
         </select>
         <select id="sigFilterAsset" onchange="loadSignalHistory()" style="background:var(--card);border:1px solid var(--border);color:var(--text);padding:5px 10px;border-radius:6px;font-size:12px">
@@ -562,6 +567,7 @@ async function runScan() {
     const statusLabels = {
       VALID_SIGNAL: '✅ Válido', PARTIAL_SIGNAL: '⚡ Parcial',
       NO_SIGNAL: '⏸ Sem sinal', NEWS_BLOCKED: '🚫 News',
+      CONTEXT_BLOCKED: '⛔ Contexto',
       NO_BIAS: '🔵 Sem viés', ERROR: '⚠️ Erro', loading: '...',
     };
     Object.entries(data.results).forEach(([key, s]) => {
@@ -670,6 +676,7 @@ function renderSignal(data) {
   const statusLabels = {
     VALID_SIGNAL: '✅ Sinal Válido', PARTIAL_SIGNAL: '⚡ Sinal Parcial',
     NO_SIGNAL: '⏸ Sem Sinal', NEWS_BLOCKED: '🚫 Bloqueado por Notícia',
+    CONTEXT_BLOCKED: '⛔ Bloqueado por Contexto',
     NO_BIAS: '🔵 Sem Tendência', INSUFFICIENT_DATA: '📡 Dados Insuficientes',
   };
   const op = data.operationalContext || null;
@@ -755,7 +762,7 @@ function renderSignal(data) {
         <div class="meta-item"><div class="meta-label">ADX</div><div class="meta-value">${adxStr}</div></div>
       </div>`;
 
-    if (['BUY','SELL'].includes(data.direction)) {
+    if (['BUY','SELL'].includes(data.direction) && ['VALID_SIGNAL','PARTIAL_SIGNAL'].includes(status)) {
       document.getElementById('tradeFormCard').style.display = '';
       document.getElementById('fDir').value   = data.direction;
       document.getElementById('fEntry').value = L.entry;

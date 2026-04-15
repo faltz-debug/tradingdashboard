@@ -69,6 +69,7 @@ const TWELVE_DATA_KEY  = process.env.TWELVE_DATA_KEY  || 'COLE_SUA_CHAVE_AQUI';
 const TELEGRAM_TOKEN   = process.env.TELEGRAM_TOKEN   || '';
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
 const VIP_TOKEN        = process.env.VIP_TOKEN        || '';
+const AUTO_BLOCK_WEAK_CONTEXT = process.env.AUTO_BLOCK_WEAK_CONTEXT !== 'false';
 const CACHE_TTL_MS     = 15 * 60 * 1000;   // 15 minutos (fallback Twelve Data)
 
 // ── OANDA (tempo real para XAU, EUR, JPY) ───────────────────────────────────
@@ -984,11 +985,14 @@ async function checkAndSendAlerts(key, data) {
   // Sem 1H concordando, o sinal de 15M tem probabilidade baixa de ser sustentável
   const has1hConfluence = s.tfConfluence.includes('1H');
   const confluenceBlocked = masterChanged && s.score !== 0 && !has1hConfluence;
+  const contextBlocked = AUTO_BLOCK_WEAK_CONTEXT && s.operationalContext?.status === 'EVITAR';
 
-  const filterBlock = adxBlocked || confluenceBlocked;
+  const filterBlock = adxBlocked || confluenceBlocked || contextBlocked;
 
   if (filterBlock) {
-    const reason = adxBlocked
+    const reason = contextBlocked
+      ? `Contexto operacional em EVITAR — ${s.operationalContext?.detail || 'histórico fraco'}`
+      : adxBlocked
       ? `ADX baixo (${s.adx.toFixed(1)}) — mercado lateral`
       : `Sem confluência 1H — sinal fraco`;
     console.log(`🚫 Alerta ${cfg.name} suprimido: ${reason}`);
@@ -1677,10 +1681,22 @@ async function computeVipSignal(assetKey, entryTf = '15m', biasTf = '1h', { skip
     tp = parseFloat((entry - 3.0 * atr).toFixed(cfg.decimals));
   }
 
+  const vipOperationalContext = getOperationalContext(assetKey, {
+    score,
+    audit: {
+      regime: adx >= 40 ? 'TREND_FORTE' : adx >= 25 ? 'TREND_MODERADA' : adx >= 15 ? 'TREND_FRACA' : 'LATERAL',
+      session: { isGood: filterSession, label: sessionInfo.sessionStr },
+      news: { isBlocked: newsBlocked, name: newsInfo.nearName, time: newsInfo.nearTimeStr },
+    }
+  });
+
   let status, reason;
   if (newsBlocked) {
     status = 'NEWS_BLOCKED';
     reason = `Bloqueado por notícia: ${newsInfo.nearName || 'evento de alto impacto'} (${newsInfo.nearTimeStr || ''})`;
+  } else if (AUTO_BLOCK_WEAK_CONTEXT && vipOperationalContext?.status === 'EVITAR') {
+    status = 'CONTEXT_BLOCKED';
+    reason = `Bloqueado por contexto: ${vipOperationalContext.detail}`;
   } else if (score >= 7) {
     status = 'VALID_SIGNAL';
     reason = `Todos os filtros passaram. ${direction === 'BUY' ? '📈 Compra' : '📉 Venda'} confirmada.`;
@@ -1706,6 +1722,7 @@ async function computeVipSignal(assetKey, entryTf = '15m', biasTf = '1h', { skip
       adxOk:       filterAdx,
       sessionOk:   filterSession,
       newsBlocked: newsBlocked,
+      contextBlocked: AUTO_BLOCK_WEAK_CONTEXT && vipOperationalContext?.status === 'EVITAR',
     },
     levels: {
       entry:   parseFloat(entry.toFixed(cfg.decimals)),
@@ -1723,18 +1740,9 @@ async function computeVipSignal(assetKey, entryTf = '15m', biasTf = '1h', { skip
       price:   parseFloat(entry.toFixed(cfg.decimals)),
       newsInfo: newsBlocked ? { name: newsInfo.nearName, timeStr: newsInfo.nearTimeStr } : null,
     },
-    operationalContext: null,
+    operationalContext: vipOperationalContext,
     generatedAt: Date.now(),
   };
-
-  result.operationalContext = getOperationalContext(assetKey, {
-    score,
-    audit: {
-      regime: adx >= 40 ? 'TREND_FORTE' : adx >= 25 ? 'TREND_MODERADA' : adx >= 15 ? 'TREND_FRACA' : 'LATERAL',
-      session: { isGood: filterSession, label: sessionInfo.sessionStr },
-      news: { isBlocked: newsBlocked, name: newsInfo.nearName, time: newsInfo.nearTimeStr },
-    }
-  });
 
   // Scan mode: não grava no histórico nem envia Telegram
   if (!skipPersist) {
@@ -1813,7 +1821,7 @@ app.get('/api/vip/signals', rateLimit, vipAuth, (req, res) => {
   res.json({ success: true, count: signals.length, signals });
 });
 
-app.post('/api/vip/trades/open', rateLimit, vipAuth, (req, res) => {
+app.post('/api/vip/trades/open', rateLimit, vipAuth, async (req, res) => {
   const { asset, direction, entry, sl, tp, atr, rr, score, biasTf, entryTf, session, reason } = req.body;
   if (!asset || !direction || entry == null || sl == null || tp == null)
     return res.status(400).json({ success: false, error: 'Campos obrigatórios: asset, direction, entry, sl, tp' });
@@ -1821,6 +1829,21 @@ app.post('/api/vip/trades/open', rateLimit, vipAuth, (req, res) => {
     return res.status(400).json({ success: false, error: 'direction deve ser BUY ou SELL' });
   if (!ASSETS[asset.toLowerCase()])
     return res.status(404).json({ success: false, error: `Ativo não encontrado: ${asset}` });
+
+  try {
+    const freshSignal = await computeVipSignal(asset.toLowerCase(), entryTf || '15m', biasTf || '1h', { skipPersist: true });
+    const blockedStatuses = ['NEWS_BLOCKED', 'CONTEXT_BLOCKED', 'NO_SIGNAL', 'NO_BIAS', 'INSUFFICIENT_DATA'];
+    if (blockedStatuses.includes(freshSignal.status)) {
+      return res.status(409).json({
+        success: false,
+        error: `Trade bloqueado: ${freshSignal.meta?.reason || freshSignal.status}`,
+        status: freshSignal.status,
+      });
+    }
+  } catch (validationErr) {
+    return res.status(500).json({ success: false, error: `Falha ao validar sinal VIP: ${validationErr.message}` });
+  }
+
   const trade = tradeStore.openTrade({
     asset: asset.toLowerCase(), direction: direction.toUpperCase(),
     entry: parseFloat(entry), sl: parseFloat(sl), tp: parseFloat(tp),
@@ -1980,6 +2003,7 @@ app.get('/api/health', rateLimit, (req, res) => {
     twelveDataKey: TWELVE_DATA_KEY === 'COLE_SUA_CHAVE_AQUI' ? '❌ não configurado' : '✅ ok',
     btcFonte:      cache['btc']?.data?.source || 'carregando...',
     oanda:         OANDA_API_KEY  ? `✅ configurado (${OANDA_PRACTICE ? 'prática' : 'real'})` : 'ℹ️ não configurado (usando Twelve Data)',
+    autoBlockWeakContext: AUTO_BLOCK_WEAK_CONTEXT ? '✅ ativo' : '⏸ desativado',
     yahooFinance:  '⏸ desativado',
     alertInterval: `${ALERT_INTERVAL_MS / 60000} min`,
     ativos:        status,
