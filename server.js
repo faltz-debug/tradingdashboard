@@ -782,7 +782,8 @@ function computeSignals(candles15m, assetName, dec, tf = '15M') {
   const rsiTrendSig = rsi > 55 ? 'COMPRA' : rsi < 45 ? 'VENDA' : 'NEUTRO';
 
   // 4. Breakout (exclui vela atual — senão close nunca > próprio high)
-  const prevCandles = candles15m.slice(-21, -1);
+  // Lookback 30 candles — alinhado com o backtester (era 20, gerava breakouts fáceis demais)
+  const prevCandles = candles15m.slice(-31, -1);
   const bkHigh = prevCandles.length ? Math.max(...prevCandles.map(c => c.high)) : price;
   const bkLow  = prevCandles.length ? Math.min(...prevCandles.map(c => c.low))  : price;
   let bkSig = 'AGUARDAR';
@@ -1091,7 +1092,12 @@ async function checkAndSendAlerts(key, data) {
     });
   }
 
-  if ((masterChanged || reversalChanged) && cooldownOk && !filterBlock && !riskFilterBlock) {
+  // Só envia Telegram quando score é forte (|score| >= 3 = todos os filtros alinhados)
+  // Score 2 (MODERADA) continua registrado no dashboard mas não gera ruído no Telegram
+  // Alinhado com o backtester: entradas válidas só ocorrem com rawScore ±3
+  const strongSignal = Math.abs(s.score) >= 3;
+
+  if ((masterChanged || reversalChanged) && strongSignal && cooldownOk && !filterBlock && !riskFilterBlock) {
     const riskWarning = riskState.level !== 'NORMAL'
       ? `\n⚠️ *Modo ${riskState.level}* — ${riskState.reason} | Sizing: ${Math.round(riskState.sizingMultiplier * 100)}%`
       : '';
