@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Trading Dashboard — Relatório de Atualizações</title>
+  <style>
+    :root {
+      --bg: #f5f7fb;
+      --card: #ffffff;
+      --text: #152033;
+      --muted: #5b6b86;
+      --line: #d9e1ee;
+      --cyan: #0ea5e9;
+      --green: #16a34a;
+      --amber: #d97706;
+      --red: #dc2626;
+      --purple: #7c3aed;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", Arial, sans-serif;
+      line-height: 1.55;
+    }
+    .page {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 28px;
+    }
+    .hero, .section {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 22px 24px;
+      margin-bottom: 18px;
+      box-shadow: 0 8px 24px rgba(21, 32, 51, 0.04);
+    }
+    h1 {
+      margin: 0 0 10px;
+      font-size: 30px;
+      line-height: 1.15;
+    }
+    h2 {
+      margin: 0 0 12px;
+      font-size: 18px;
+      color: var(--cyan);
+      text-transform: uppercase;
+      letter-spacing: .06em;
+    }
+    p { margin: 0 0 10px; }
+    ul {
+      margin: 10px 0 0 18px;
+      padding: 0;
+    }
+    li { margin: 0 0 7px; }
+    .meta {
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .mini {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px 16px;
+      background: #fbfdff;
+    }
+    .mini h3 {
+      margin: 0 0 8px;
+      font-size: 14px;
+      color: var(--text);
+    }
+    .tag {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      margin-right: 8px;
+      margin-bottom: 8px;
+    }
+    .green { background: rgba(22,163,74,.12); color: var(--green); }
+    .amber { background: rgba(217,119,6,.12); color: var(--amber); }
+    .red { background: rgba(220,38,38,.12); color: var(--red); }
+    .purple { background: rgba(124,58,237,.12); color: var(--purple); }
+    .code {
+      font-family: Consolas, "Courier New", monospace;
+      background: #0f172a;
+      color: #e2e8f0;
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      margin-top: 8px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin-top: 8px;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      padding: 8px 10px;
+      vertical-align: top;
+    }
+    th {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+    .small {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    @media print {
+      body { background: #fff; }
+      .page { max-width: none; padding: 0; }
+      .hero, .section, .mini { box-shadow: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="hero">
+      <h1>Trading Dashboard — Relatório Consolidado de Atualizações</h1>
+      <p class="meta">Projeto: <strong>trading-dashboard</strong> • Objetivo do relatório: handoff para outro agente • Gerado em 2026-04-15 10:26 Europe/Lisbon</p>
+      <p>Este relatório resume as mudanças estruturais, funcionais e operacionais feitas no projeto desde o início desta rodada de melhorias, com foco em confiabilidade, coerência entre módulos, qualidade de dados e assertividade medida.</p>
+      <div style="margin-top:12px">
+        <span class="tag green">Dashboard online e local funcionando</span>
+        <span class="tag green">VIP autenticado e operacional</span>
+        <span class="tag green">Dados reais: BTC via Kraken, FX/Gold via Twelve Data</span>
+        <span class="tag amber">Auto-block de contexto fraco ativo por padrão</span>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Estado Atual</h2>
+      <div class="grid">
+        <div class="mini">
+          <h3>Motor ao vivo</h3>
+          <ul>
+            <li>Sinal mestre alinhado em <strong>EMA Tendência + RSI Momentum + Breakout</strong>.</li>
+            <li>Auditoria embutida com regime, score antes/depois do ADX, votos e bloqueios.</li>
+            <li>Contexto operacional calculado como <strong>OPERAR / CAUTELA / EVITAR</strong>.</li>
+            <li>Bloqueio opcional por contexto fraco já implementado.</li>
+          </ul>
+        </div>
+        <div class="mini">
+          <h3>Camada de dados</h3>
+          <ul>
+            <li><strong>BTCUSD</strong> via Kraken.</li>
+            <li><strong>XAUUSD / EURUSD / USDJPY</strong> via Twelve Data com candles fechados.</li>
+            <li>Health endpoint mostra fonte, estado da key e status do auto-block.</li>
+          </ul>
+        </div>
+        <div class="mini">
+          <h3>Área VIP</h3>
+          <ul>
+            <li>Token por query/header.</li>
+            <li>Scanner, sinal, trades, stats e histórico funcionando.</li>
+            <li>Bloqueio por contexto fraco refletido na UI e validado também no backend.</li>
+          </ul>
+        </div>
+        <div class="mini">
+          <h3>Backtester</h3>
+          <ul>
+            <li>Master Signal alinhado com o servidor.</li>
+            <li>Auditoria de trades com ADX, score, sessão, news e motivo de saída.</li>
+            <li>Métricas ampliadas: drawdown, expectancy, Sharpe, Sortino, duração e streak.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Principais Atualizações por Área</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Área</th>
+            <th>O que mudou</th>
+            <th>Impacto</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Estabilidade</td>
+            <td>Correção de arquivos truncados em <code>dashboard.html</code>, <code>vip.html</code> e <code>backtester.html</code>; ajustes de deploy e consistência entre local/GitHub/Railway.</td>
+            <td>App deixou de travar em “conectando” / “aguardando dados”.</td>
+          </tr>
+          <tr>
+            <td>Dados</td>
+            <td>BTC mantido em Kraken; FX/Gold restaurados para Twelve Data; uso de candles fechados; banner de fonte de dados corrigido.</td>
+            <td>Melhora a confiabilidade operacional em 15m.</td>
+          </tr>
+          <tr>
+            <td>Sinal mestre</td>
+            <td>Troca definitiva de foco visual de MACD para RSI no núcleo do motor; score auditável com ADX, regime, sessão e news.</td>
+            <td>Menos desalinhamento entre UI, backtest e servidor.</td>
+          </tr>
+          <tr>
+            <td>Telegram</td>
+            <td>Alertas passaram a incluir auditoria e contexto operacional.</td>
+            <td>Leitura externa ao app ficou mais contextualizada.</td>
+          </tr>
+          <tr>
+            <td>VIP</td>
+            <td>Token configurado, scanner e hero alinhados com contexto operacional; status <code>CONTEXT_BLOCKED</code>; validação no backend antes de abrir trade.</td>
+            <td>Evita entradas em contexto estatisticamente ruim.</td>
+          </tr>
+          <tr>
+            <td>Live tracking</td>
+            <td>Sinais fortes/moderados agora são salvos, avaliados após horizonte e/ou TP/SL teórico, com estatísticas por ativo/regime/sessão/direção.</td>
+            <td>Assertividade real começou a ser medida, não só inferida.</td>
+          </tr>
+          <tr>
+            <td>Dashboard</td>
+            <td>Painel de assertividade real, ranking de contexto favorável/fraco, status operacional, histórico dos últimos sinais live.</td>
+            <td>Melhor leitura de “operar agora?” com base em histórico real.</td>
+          </tr>
+          <tr>
+            <td>Backtester</td>
+            <td>Master Signal alinhado; auditoria por trade; métricas de robustez e risco ampliadas.</td>
+            <td>Backtest ficou mais próximo do que o app realmente faz ao vivo.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <h2>Melhorias no Dashboard</h2>
+      <ul>
+        <li>Correção da aba <strong>DAILY</strong> para não usar mais sinal de 15m indevidamente.</li>
+        <li>Banner de fonte de dados passou a refletir a fonte real por ativo.</li>
+        <li>Status do motor com <strong>OPERAR / CAUTELA / EVITAR</strong> no card principal e nos banners por ativo.</li>
+        <li>Painel de <strong>Assertividade Real dos Sinais Emitidos</strong>.</li>
+        <li>Painel de <strong>Histórico dos Últimos Sinais Live</strong> com contexto, regime, sessão e desfecho.</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2>Melhorias na Área VIP</h2>
+      <ul>
+        <li>Autenticação por token refletida corretamente no frontend.</li>
+        <li>Scanner exibe o status operacional do contexto.</li>
+        <li>Hero do sinal VIP inclui contexto operacional e motivo.</li>
+        <li>Checklist VIP passou a incluir <strong>Contexto Operacional</strong>.</li>
+        <li>Status novo: <code>CONTEXT_BLOCKED</code>.</li>
+        <li>O backend revalida o sinal antes de abrir trade e bloqueia em casos de contexto fraco, news, sem viés ou sem setup.</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2>Melhorias no Backtester</h2>
+      <ul>
+        <li>Estratégia <strong>Master Signal</strong> alinhada com o servidor.</li>
+        <li>Auditoria por trade:
+          <span class="small">score bruto/final, ADX, sessão, news blackout, motivo de saída.</span>
+        </li>
+        <li>Resumo expandido com:
+          <span class="small">ADX médio de entrada, trend forte/moderada, melhor sessão, motivos de saída.</span>
+        </li>
+        <li>Métricas novas:
+          <span class="small">Max Drawdown, Expectancy, Sharpe aproximado, Sortino aproximado, barras por trade e sequência máxima de losses.</span>
+        </li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2>Commits Relevantes</h2>
+      <div class="code">a8e5b2d  Add optional weak-context auto blocking
+3db3f43  Add live signal history panel
+eeaf9bc  Propagate operational context to VIP and Telegram
+8d75693  Add soft operational context guidance
+db6403e  Add actionable context ranking to dashboard
+6c54e42  Refine live signal evaluation with TP/SL logic
+e4936ac  Add live signal tracking and real accuracy stats
+2168c03  Add live signal audit and regime metrics
+035edb0  Add master signal audit trail to backtester
+19e5531  Align backtester master signal with server logic
+c03bb87  Fix truncated backtester page
+3d1d9af  Fix truncated dashboard and VIP pages
+3555782  fix: critical audit fixes — security, signals, backtester, stability
+e0f72e9  Alinha dashboard e fontes de dados</div>
+    </div>
+
+    <div class="section">
+      <h2>Variáveis e Configuração Relevantes</h2>
+      <div class="code">TWELVE_DATA_KEY=...
+TELEGRAM_TOKEN=...
+TELEGRAM_CHAT_ID=...
+VIP_TOKEN=...
+FRONTEND_ORIGIN=*
+OANDA_API_KEY=...        (opcional)
+OANDA_PRACTICE=true      (opcional)
+AUTO_BLOCK_WEAK_CONTEXT=true   # padrão atual</div>
+      <p class="small">Observação: o bloqueio automático por contexto pode ser desligado definindo <code>AUTO_BLOCK_WEAK_CONTEXT=false</code>.</p>
+    </div>
+
+    <div class="section">
+      <h2>Próximos Passos Sugeridos</h2>
+      <ul>
+        <li>Aprofundar ainda mais o backtester com métricas como <strong>Calmar</strong>, <strong>Monte Carlo</strong> e breakdown por timeframe.</li>
+        <li>Criar um painel executivo separado com decisão consolidada por ativo e timeframe.</li>
+        <li>Persistir o histórico em banco, se o volume de sinais/trades crescer.</li>
+        <li>Usar a estatística por contexto para ajuste dinâmico de risco, não só para bloquear/permitir.</li>
+      </ul>
+    </div>
+  </div>
+</body>
+</html>

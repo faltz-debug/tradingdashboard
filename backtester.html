@@ -457,6 +457,78 @@ function calcWFStats(trades) {
     };
 }
 
+function calcStdDev(values) {
+    if (!values || values.length < 2) return 0;
+    const mean = values.reduce((a, b) => a + b, 0) / values.length;
+    const variance = values.reduce((acc, v) => acc + Math.pow(v - mean, 2), 0) / (values.length - 1);
+    return Math.sqrt(Math.max(variance, 0));
+}
+
+function calcRiskMetrics(trades, candles) {
+    if (!trades.length) {
+        return {
+            maxDrawdownPct: 0,
+            expectancyPct: 0,
+            sharpeApprox: 0,
+            sortinoApprox: 0,
+            avgBarsHeld: 0,
+            lossStreakMax: 0,
+        };
+    }
+
+    let equity = 1000;
+    let peak = equity;
+    let maxDrawdownPct = 0;
+    let currentLossStreak = 0;
+    let maxLossStreak = 0;
+    let barsHeldSum = 0;
+    const returns = [];
+    const downsideReturns = [];
+
+    trades.forEach(t => {
+        const pctReturn = (t.pct || 0) / 100;
+        equity = equity * (1 + pctReturn);
+        peak = Math.max(peak, equity);
+        const drawdownPct = peak > 0 ? ((equity - peak) / peak) * 100 : 0;
+        maxDrawdownPct = Math.min(maxDrawdownPct, drawdownPct);
+
+        returns.push(t.pct || 0);
+        if ((t.pct || 0) < 0) downsideReturns.push(t.pct || 0);
+
+        if ((t.pct || 0) < 0) {
+            currentLossStreak++;
+            maxLossStreak = Math.max(maxLossStreak, currentLossStreak);
+        } else {
+            currentLossStreak = 0;
+        }
+
+        barsHeldSum += Math.max(1, (t.exitIdx || 0) - (t.entryIdx || 0));
+    });
+
+    const avgTrade = returns.reduce((a, b) => a + b, 0) / returns.length;
+    const winTrades = trades.filter(t => t.win);
+    const lossTrades = trades.filter(t => !t.win);
+    const avgWin = winTrades.length ? winTrades.reduce((a, t) => a + t.pct, 0) / winTrades.length : 0;
+    const avgLossAbs = lossTrades.length ? Math.abs(lossTrades.reduce((a, t) => a + t.pct, 0) / lossTrades.length) : 0;
+    const winRate = winTrades.length / trades.length;
+    const lossRate = lossTrades.length / trades.length;
+    const expectancyPct = (winRate * avgWin) - (lossRate * avgLossAbs);
+
+    const stdAll = calcStdDev(returns);
+    const stdDown = calcStdDev(downsideReturns);
+    const sharpeApprox = stdAll > 0 ? (avgTrade / stdAll) * Math.sqrt(returns.length) : 0;
+    const sortinoApprox = stdDown > 0 ? (avgTrade / stdDown) * Math.sqrt(returns.length) : 0;
+
+    return {
+        maxDrawdownPct: parseFloat(Math.abs(maxDrawdownPct).toFixed(2)),
+        expectancyPct: parseFloat(expectancyPct.toFixed(3)),
+        sharpeApprox: parseFloat(sharpeApprox.toFixed(2)),
+        sortinoApprox: parseFloat(sortinoApprox.toFixed(2)),
+        avgBarsHeld: parseFloat((barsHeldSum / trades.length).toFixed(1)),
+        lossStreakMax: maxLossStreak,
+    };
+}
+
 function runWalkForward(asset, stratKey, candles, biasCandles) {
     const strat    = STRATEGIES[stratKey];
     const splitIdx = Math.floor(candles.length * 0.7);
@@ -1513,6 +1585,7 @@ function runBacktest(asset, stratKey, btn) {
     const costPct  = getCostPct(asset);
     const costLabel= COST_PRESETS[activeCostPreset]?.label || '';
     const costRound= (costPct * 2).toFixed(3); // round-trip
+    const riskMetrics = calcRiskMetrics(trades, candles);
     const auditTrades = trades.filter(t => t.audit);
     const avgEntryAdx = auditTrades.length
         ? (auditTrades.reduce((a, t) => a + (t.audit.adx || 0), 0) / auditTrades.length).toFixed(1)
@@ -1547,8 +1620,14 @@ function runBacktest(asset, stratKey, btn) {
         <div class="summary-card"><div class="s-label">Win Rate Geral</div><div class="s-value ${wr>=50?'s-green':'s-red'}">${wr}%</div></div>
         <div class="summary-card"><div class="s-label">Lucro Líquido</div><div class="s-value ${sumPct>=0?'s-green':'s-red'}">${sumPct}%</div></div>
         <div class="summary-card"><div class="s-label">Fator Lucro</div><div class="s-value ${pf>=1?'s-green':'s-red'}">${pf}</div></div>
+        <div class="summary-card" style="border-color:#ef444455"><div class="s-label">📉 Max Drawdown</div><div class="s-value s-red">${riskMetrics.maxDrawdownPct}%</div></div>
+        <div class="summary-card" style="border-color:#22d3ee55"><div class="s-label">🎯 Expectancy</div><div class="s-value ${riskMetrics.expectancyPct>=0?'s-green':'s-red'}">${riskMetrics.expectancyPct>0?'+':''}${riskMetrics.expectancyPct}%</div></div>
+        <div class="summary-card" style="border-color:#38bdf855"><div class="s-label">📐 Sharpe Aprox.</div><div class="s-value s-blue">${riskMetrics.sharpeApprox}</div></div>
+        <div class="summary-card" style="border-color:#818cf855"><div class="s-label">🛡️ Sortino Aprox.</div><div class="s-value" style="color:#c4b5fd">${riskMetrics.sortinoApprox}</div></div>
         <div class="summary-card"><div class="s-label">Média Win</div><div class="s-value s-green">+${avgWin}%</div></div>
         <div class="summary-card"><div class="s-label">Média Loss</div><div class="s-value s-red">${avgLoss}%</div></div>
+        <div class="summary-card" style="border-color:#f9731655"><div class="s-label">⏱️ Barras por Trade</div><div class="s-value s-yellow">${riskMetrics.avgBarsHeld}</div></div>
+        <div class="summary-card" style="border-color:#fb718555"><div class="s-label">🧨 Sequência Loss</div><div class="s-value s-red">${riskMetrics.lossStreakMax}</div></div>
         <div class="summary-card" style="border-color:#00ff4133"><div class="s-label">🟢 Longs / WR</div><div class="s-value s-green">${longs.length} / ${wrL}%</div></div>
         <div class="summary-card" style="border-color:#ff335533"><div class="s-label">🔴 Shorts / WR</div><div class="s-value s-red">${shorts.length} / ${wrS}%</div></div>
         <div class="summary-card" style="border-color:#ffaa0055"><div class="s-label">💸 Custo/Trade</div><div class="s-value s-yellow" style="font-size:16px">−${costRound}%</div><div style="font-size:9px;color:#64748b;margin-top:4px">${costLabel}</div></div>
