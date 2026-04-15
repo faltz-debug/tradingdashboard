@@ -998,10 +998,48 @@ async function checkAndSendAlerts(key, data) {
     console.log(`🚫 Alerta ${cfg.name} suprimido: ${reason}`);
   }
 
+  // ===== RISCO ADAPTATIVO =====
+  // Lê estado de risco atual baseado em histórico de sinais ao vivo
+  const riskState = tradeStore.getRiskState();
+
+  // BLOCKED: sistema pausado, não emite sinal nenhum
+  const riskBlocked = riskState.level === 'BLOCKED';
+
+  // DEFENSIVE: só BTC e XAUUSD permitidos
+  const riskAssetBlocked = riskState.level === 'DEFENSIVE'
+    && riskState.allowedAssets !== null
+    && !riskState.allowedAssets.includes(key);
+
+  // Score mínimo por nível de risco (CAUTIOUS/DEFENSIVE exigem score 3)
+  const riskScoreBlocked = Math.abs(s.score) < riskState.minScore;
+
+  const riskFilterBlock = riskBlocked || riskAssetBlocked || riskScoreBlocked;
+
+  if (riskFilterBlock) {
+    const riskReason = riskBlocked
+      ? `🛑 RISCO BLOQUEADO — ${riskState.reason}`
+      : riskAssetBlocked
+      ? `⚠️ Modo DEFENSIVO — ${key.toUpperCase()} suspenso (${riskState.reason})`
+      : `⚠️ Score ${s.score} insuficiente para modo ${riskState.level} (mín: ${riskState.minScore})`;
+    console.log(`${riskReason}`);
+  }
+
+  // Envio de alerta de transição para modo BLOCKED (uma vez por ciclo de ativo)
+  if (riskBlocked && masterChanged && !filterBlock) {
+    const blockMsg = `🛑 *RISCO ADAPTATIVO — SISTEMA PAUSADO*\n\n`
+      + `Motivo: ${riskState.reason}\n`
+      + `Streak de perdas: ${riskState.streakLoss}\n`
+      + `Drawdown atual: ${riskState.drawdownPct.toFixed(1)}%\n`
+      + `Perdas hoje: ${riskState.dailyLoss}\n\n`
+      + `Nenhum sinal será emitido até o sistema se recuperar.\n`
+      + `Acompanhe o painel de risco em /api/risk-state`;
+    try { await sendTelegram(blockMsg); } catch (_) {}
+  }
+
   // Se notícia de alto impacto está muito próxima (±30min), avisa mas NÃO bloqueia
   // O trader decide — mas a info vai no alert
 
-  const actionableLiveSignal = masterChanged && Math.abs(s.score) >= 2 && !filterBlock;
+  const actionableLiveSignal = masterChanged && Math.abs(s.score) >= 2 && !filterBlock && !riskFilterBlock;
   if (actionableLiveSignal) {
     tradeStore.appendLiveSignal({
       asset: key,
@@ -1019,16 +1057,20 @@ async function checkAndSendAlerts(key, data) {
       rr: 2,
       audit: s.audit || null,
       operationalContext: s.operationalContext || null,
+      riskState: { level: riskState.level, reason: riskState.reason, sizingMultiplier: riskState.sizingMultiplier },
       horizonCandles: 4,
       source: 'live_master_signal',
     });
   }
 
-  if ((masterChanged || reversalChanged) && cooldownOk && !filterBlock) {
+  if ((masterChanged || reversalChanged) && cooldownOk && !filterBlock && !riskFilterBlock) {
+    const riskWarning = riskState.level !== 'NORMAL'
+      ? `\n⚠️ *Modo ${riskState.level}* — ${riskState.reason} | Sizing: ${Math.round(riskState.sizingMultiplier * 100)}%`
+      : '';
     const header = masterChanged
       ? (prev ? `🔔 Sinal mudou: ${prev.masterLabel} → ${s.masterLabel}` : '🔔 Primeiro sinal detectado')
       : '⚡ Novo sinal de Reversão detectado';
-    const msg = `${header}\n\n` + buildTelegramMessage(s, sessionInfo, newsInfo);
+    const msg = `${header}${riskWarning}\n\n` + buildTelegramMessage(s, sessionInfo, newsInfo);
     try {
       await sendTelegram(msg);
       lastSignals[key] = { masterLabel: s.masterLabel, rsiReversalAlert: s.rsiReversalAlert, lastSentAt: now };
@@ -1049,7 +1091,7 @@ async function checkAndSendAlerts(key, data) {
 // ===== ASSETS CONFIG =====
 const ASSETS = {
   btc:    { symbol: 'BTC/USD',  name: 'BTCUSD',  fallbackPrice: 67000,  vol: 500,   decimals: 0, alwaysOpen: true  },
-  xauusd: { symbol: 'XAU/USD',  name: 'XAUUSD',  fallbackPrice: 4700,   vol: 40,    decimals: 2, alwaysOpen: false },
+  xauusd: { symbol: 'XAU/USD',  name: 'XAUUSD',  fallbackPrice: 3300,   vol: 40,    decimals: 2, alwaysOpen: false },
   eurusd: { symbol: 'EUR/USD',  name: 'EURUSD',  fallbackPrice: 1.095,  vol: 0.004, decimals: 5, alwaysOpen: false },
   usdjpy: { symbol: 'USD/JPY',  name: 'USDJPY',  fallbackPrice: 160.0,  vol: 0.6,   decimals: 3, alwaysOpen: false },
 };
@@ -1997,6 +2039,8 @@ app.get('/api/health', rateLimit, (req, res) => {
       ? `${c.data.price.toFixed(cfg.decimals)} (${age}min atrás) [${c.data.source || 'n/a'}]`
       : 'carregando...';
   });
+  const risk = tradeStore.getRiskState();
+  const riskEmoji = { NORMAL: '🟢', CAUTIOUS: '🟡', DEFENSIVE: '🟠', BLOCKED: '🔴' };
   res.json({
     status:        'ok',
     version:       VERSION,
@@ -2006,6 +2050,15 @@ app.get('/api/health', rateLimit, (req, res) => {
     autoBlockWeakContext: AUTO_BLOCK_WEAK_CONTEXT ? '✅ ativo' : '⏸ desativado',
     yahooFinance:  '⏸ desativado',
     alertInterval: `${ALERT_INTERVAL_MS / 60000} min`,
+    riskManagement: {
+      level:          risk.level,
+      emoji:          riskEmoji[risk.level] || '⚪',
+      reason:         risk.reason,
+      streakLoss:     risk.streakLoss,
+      drawdownPct:    risk.drawdownPct,
+      dailyLoss:      risk.dailyLoss,
+      sizingMultiplier: risk.sizingMultiplier,
+    },
     ativos:        status,
   });
 });
@@ -2116,6 +2169,33 @@ app.get('/api/live-signals/executive', rateLimit, (req, res) => {
     strongContexts: stats.strongContexts || [],
     weakContexts: stats.weakContexts || [],
   });
+});
+
+app.get('/api/risk-state', rateLimit, (req, res) => {
+  try {
+    const risk = tradeStore.getRiskState();
+    const levelEmoji = { NORMAL: '🟢', CAUTIOUS: '🟡', DEFENSIVE: '🟠', BLOCKED: '🔴' };
+    res.json({
+      success: true,
+      level: risk.level,
+      emoji: levelEmoji[risk.level] || '⚪',
+      reason: risk.reason,
+      streakLoss: risk.streakLoss,
+      drawdownPct: risk.drawdownPct,
+      dailyLoss: risk.dailyLoss,
+      sizingMultiplier: risk.sizingMultiplier,
+      minScore: risk.minScore === Infinity ? null : risk.minScore,
+      allowedAssets: risk.allowedAssets,
+      description: {
+        NORMAL:    'Sistema operando normalmente. Todos os sinais elegíveis emitidos.',
+        CAUTIOUS:  'Cautela ativa. Apenas score 3 (máximo) permite emissão. Sizing 75%.',
+        DEFENSIVE: 'Modo defensivo. Apenas BTC/XAU, score 3 obrigatório. Sizing 50%.',
+        BLOCKED:   'Sistema pausado. Nenhum sinal emitido até recuperação.',
+      }[risk.level],
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 // ===== AUTO-REFRESH + ALERTAS =====

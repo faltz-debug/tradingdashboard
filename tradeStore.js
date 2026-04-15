@@ -600,6 +600,106 @@ function getStats({ asset } = {}) {
   };
 }
 
+// ===== GESTÃO DE RISCO ADAPTATIVA =====
+/**
+ * getRiskState() — Lê o histórico de sinais ao vivo e retorna o nível de risco atual.
+ *
+ * Níveis:
+ *  NORMAL    — operar normalmente (score >= 2)
+ *  CAUTIOUS  — cautela (score == 3 obrigatório, aviso no Telegram)
+ *  DEFENSIVE — defensivo (score == 3, apenas BTC/XAU, aviso forte no Telegram)
+ *  BLOCKED   — bloqueado (não emitir sinais, alertar uma vez por transição)
+ *
+ * Regras (verificadas em ordem de severidade):
+ *  BLOCKED   : streak >= 5 losses consecutivos  OU  drawdown atual >= 3%  OU  >= 4 perdas no dia
+ *  DEFENSIVE : streak >= 3 losses               OU  drawdown atual >= 2%  OU  >= 3 perdas no dia
+ *  CAUTIOUS  : streak >= 2 losses               OU  drawdown atual >= 1%  OU  recent.verdict === 'FRIO'
+ *  NORMAL    : demais casos
+ */
+function getRiskState() {
+  try {
+    const stats = getLiveSignalStats();
+    if (!stats) return _normalState('sem histórico');
+
+    const streakLoss    = stats.streaks?.currentLoss  ?? 0;
+    const drawdownPct   = stats.drawdown?.currentDrawdownPct ?? 0;
+    const recentVerdict = stats.recent?.verdict ?? 'NEUTRO';
+
+    // Perdas no dia atual
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const dailyRow  = (stats.recentDaily || []).find(d => d.date === todayStr);
+    const dailyLoss = dailyRow ? (dailyRow.losses ?? 0) : 0;
+
+    // BLOCKED
+    if (streakLoss >= 5 || drawdownPct >= 3 || dailyLoss >= 4) {
+      return {
+        level: 'BLOCKED',
+        reason: streakLoss >= 5
+          ? `${streakLoss} losses consecutivos`
+          : drawdownPct >= 3
+            ? `drawdown ${drawdownPct.toFixed(1)}%`
+            : `${dailyLoss} perdas hoje`,
+        streakLoss, drawdownPct, dailyLoss,
+        sizingMultiplier: 0.0,
+        minScore: Infinity,           // nenhum sinal passa
+        allowedAssets: [],
+      };
+    }
+
+    // DEFENSIVE
+    if (streakLoss >= 3 || drawdownPct >= 2 || dailyLoss >= 3) {
+      return {
+        level: 'DEFENSIVE',
+        reason: streakLoss >= 3
+          ? `${streakLoss} losses consecutivos`
+          : drawdownPct >= 2
+            ? `drawdown ${drawdownPct.toFixed(1)}%`
+            : `${dailyLoss} perdas hoje`,
+        streakLoss, drawdownPct, dailyLoss,
+        sizingMultiplier: 0.5,
+        minScore: 3,                  // apenas score máximo
+        allowedAssets: ['btc', 'xauusd'],  // só ativos líquidos
+      };
+    }
+
+    // CAUTIOUS
+    if (streakLoss >= 2 || drawdownPct >= 1 || recentVerdict === 'FRIO') {
+      return {
+        level: 'CAUTIOUS',
+        reason: streakLoss >= 2
+          ? `${streakLoss} losses consecutivos`
+          : drawdownPct >= 1
+            ? `drawdown ${drawdownPct.toFixed(1)}%`
+            : 'performance recente fraca',
+        streakLoss, drawdownPct, dailyLoss,
+        sizingMultiplier: 0.75,
+        minScore: 3,
+        allowedAssets: null,          // todos os ativos permitidos
+      };
+    }
+
+    // NORMAL
+    return _normalState('condições normais', { streakLoss, drawdownPct, dailyLoss });
+
+  } catch (e) {
+    console.warn('⚠️  getRiskState erro:', e.message);
+    return _normalState('erro interno');
+  }
+}
+
+function _normalState(reason, extras = {}) {
+  return {
+    level: 'NORMAL',
+    reason,
+    streakLoss: extras.streakLoss ?? 0,
+    drawdownPct: extras.drawdownPct ?? 0,
+    dailyLoss: extras.dailyLoss ?? 0,
+    sizingMultiplier: 1.0,
+    minScore: 2,
+    allowedAssets: null,
+  };
+}
+
 module.exports = {
   openTrade,
   closeTrade,
@@ -611,4 +711,5 @@ module.exports = {
   evaluateLiveSignals,
   listLiveSignals,
   getLiveSignalStats,
+  getRiskState,
 };
