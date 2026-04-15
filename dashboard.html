@@ -520,12 +520,40 @@
         <div class="live-history-list" id="live-history-list"></div>
     </div>
 
+    <!-- SEMÁFORO RÁPIDO -->
+    <div id="semaforo-panel" style="display:none;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+        <div id="sem-xau" onclick="document.querySelector('.tab-btn.active').classList.remove('active');document.querySelectorAll('.tab-btn')[0].classList.add('active');switchAsset('xau',document.querySelectorAll('.tab-btn')[0])"
+            style="flex:1;min-width:110px;cursor:pointer;background:#0d1526;border:1px solid #1e3a5f;border-radius:10px;padding:10px 12px;text-align:center;transition:border-color .2s">
+            <div style="font-size:9px;color:#64748b;letter-spacing:.05em;text-transform:uppercase;margin-bottom:4px">XAUUSD</div>
+            <div id="sem-xau-dot" style="font-size:22px">⚪</div>
+            <div id="sem-xau-label" style="font-size:10px;color:#64748b;margin-top:3px">—</div>
+        </div>
+        <div id="sem-btc" onclick="document.querySelector('.tab-btn.active').classList.remove('active');document.querySelectorAll('.tab-btn')[1].classList.add('active');switchAsset('btc',document.querySelectorAll('.tab-btn')[1])"
+            style="flex:1;min-width:110px;cursor:pointer;background:#0d1526;border:1px solid #1e3a5f;border-radius:10px;padding:10px 12px;text-align:center;transition:border-color .2s">
+            <div style="font-size:9px;color:#64748b;letter-spacing:.05em;text-transform:uppercase;margin-bottom:4px">BTC/USD</div>
+            <div id="sem-btc-dot" style="font-size:22px">⚪</div>
+            <div id="sem-btc-label" style="font-size:10px;color:#64748b;margin-top:3px">—</div>
+        </div>
+        <div id="sem-eur" onclick="document.querySelector('.tab-btn.active').classList.remove('active');document.querySelectorAll('.tab-btn')[2].classList.add('active');switchAsset('eur',document.querySelectorAll('.tab-btn')[2])"
+            style="flex:1;min-width:110px;cursor:pointer;background:#0d1526;border:1px solid #1e3a5f;border-radius:10px;padding:10px 12px;text-align:center;transition:border-color .2s">
+            <div style="font-size:9px;color:#64748b;letter-spacing:.05em;text-transform:uppercase;margin-bottom:4px">EURUSD</div>
+            <div id="sem-eur-dot" style="font-size:22px">⚪</div>
+            <div id="sem-eur-label" style="font-size:10px;color:#64748b;margin-top:3px">—</div>
+        </div>
+        <div id="sem-jpy" onclick="document.querySelector('.tab-btn.active').classList.remove('active');document.querySelectorAll('.tab-btn')[3].classList.add('active');switchAsset('jpy',document.querySelectorAll('.tab-btn')[3])"
+            style="flex:1;min-width:110px;cursor:pointer;background:#0d1526;border:1px solid #1e3a5f;border-radius:10px;padding:10px 12px;text-align:center;transition:border-color .2s">
+            <div style="font-size:9px;color:#64748b;letter-spacing:.05em;text-transform:uppercase;margin-bottom:4px">USDJPY</div>
+            <div id="sem-jpy-dot" style="font-size:22px">⚪</div>
+            <div id="sem-jpy-label" style="font-size:10px;color:#64748b;margin-top:3px">—</div>
+        </div>
+    </div>
+
     <!-- ASSET TABS -->
     <div class="tabs">
-        <button class="tab-btn active" onclick="switchAsset('xau', this)">⚜️ XAUUSD</button>
-        <button class="tab-btn" onclick="switchAsset('btc', this)">₿ BTC/USD</button>
-        <button class="tab-btn" onclick="switchAsset('eur', this)">💶 EURUSD</button>
-        <button class="tab-btn" onclick="switchAsset('jpy', this)">🇯🇵 USDJPY</button>
+        <button class="tab-btn active" onclick="switchAsset('xau', this)">⚜️ <span id="tab-sem-xau"></span> XAUUSD</button>
+        <button class="tab-btn" onclick="switchAsset('btc', this)">₿ <span id="tab-sem-btc"></span> BTC/USD</button>
+        <button class="tab-btn" onclick="switchAsset('eur', this)">💶 <span id="tab-sem-eur"></span> EURUSD</button>
+        <button class="tab-btn" onclick="switchAsset('jpy', this)">🇯🇵 <span id="tab-sem-jpy"></span> USDJPY</button>
         <button id="notif-btn" onclick="requestNotificationPermission()" style="margin-left:auto;padding:8px 16px;background:#0d1526;border:1px solid #1e3a5f;color:#64748b;border-radius:8px;cursor:pointer;font-size:12px;font-family:'Courier New',monospace;font-weight:700" title="Ativar alertas de sinal">🔔 Alertas</button>
         <button id="tg-btn" onclick="testTelegram()" style="padding:8px 16px;background:#0d1526;border:1px solid #1e3a5f;color:#64748b;border-radius:8px;cursor:pointer;font-size:12px;font-family:'Courier New',monospace;font-weight:700" title="Testar alerta Telegram">✈️ Telegram</button>
     </div>
@@ -2715,6 +2743,56 @@ function updateSignalBanner() {
         else if (Notification.permission === 'granted') { btn.textContent = '🔔 Ativo'; btn.style.color = '#00ff41'; btn.style.borderColor = '#00ff41'; }
         else if (Notification.permission === 'denied')  { btn.textContent = '🔕 Bloqueado'; btn.style.color = '#ff3355'; }
     }
+
+    // Atualiza semáforo por ativo
+    updateSemaforo();
+}
+
+function updateSemaforo() {
+    const TF_MAP = { '15m':'15m', '1h':'1h', '4h':'4h', 'daily':'daily' };
+    const assets = ['xau','btc','eur','jpy'];
+    let anyReady = false;
+
+    assets.forEach(asset => {
+        const d = state[asset].data;
+        const dotEl   = document.getElementById('sem-' + asset + '-dot');
+        const labelEl = document.getElementById('sem-' + asset + '-label');
+        const cardEl  = document.getElementById('sem-' + asset);
+        const tabEl   = document.getElementById('tab-sem-' + asset);
+        if (!dotEl) return;
+
+        if (!d?.success) return;
+        anyReady = true;
+
+        const tfKey = TF_MAP[state[asset].tf] || '15m';
+        const srv   = d.signals?.[tfKey];
+
+        let dot = '⚪', label = '—', borderColor = '#1e3a5f', tabDot = '';
+
+        if (d.isMarketClosed && !d.isSimulation) {
+            dot = '🔒'; label = 'Fechado'; borderColor = '#334155';
+        } else if (d.isSimulation) {
+            dot = '⚠️'; label = 'Simulação'; borderColor = '#b4530044';
+        } else if (srv) {
+            const opCtx = getOperationalContext(asset, srv);
+            const status = opCtx.status || 'CAUTELA';
+            if (status === 'OPERAR') {
+                dot = '🟢'; label = 'OPERAR'; borderColor = '#00ff4155'; tabDot = '🟢';
+            } else if (status === 'EVITAR') {
+                dot = '🔴'; label = 'EVITAR'; borderColor = '#ff335555'; tabDot = '🔴';
+            } else {
+                dot = '🟡'; label = 'CAUTELA'; borderColor = '#ffaa0055'; tabDot = '🟡';
+            }
+        }
+
+        dotEl.textContent   = dot;
+        labelEl.textContent = label;
+        if (cardEl) cardEl.style.borderColor = borderColor;
+        if (tabEl)  tabEl.textContent = tabDot ? tabDot + ' ' : '';
+    });
+
+    const panel = document.getElementById('semaforo-panel');
+    if (panel && anyReady) panel.style.display = 'flex';
 }
 
 // ─────────────────── NAVIGATION ───────────────────
