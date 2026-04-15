@@ -1823,6 +1823,38 @@ async function computeVipSignal(assetKey, entryTf = '15m', biasTf = '1h', { skip
     generatedAt: Date.now(),
   };
 
+  // ── Histórico do setup atual ─────────────────────────────────────────────
+  // Filtra o histórico de sinais ao vivo pelo contexto exato deste setup:
+  // mesmo ativo + direção + regime + sessão → mostra WR e últimos resultados.
+  const regime  = result.meta.adx >= 40 ? 'TREND_FORTE'
+                : result.meta.adx >= 25 ? 'TREND_MODERADA'
+                : result.meta.adx >= 15 ? 'TREND_FRACA' : 'LATERAL';
+  const session = sessionInfo.sessionStr || null;
+
+  // Contexto completo (mais específico)
+  const setupHistoryFull = tradeStore.getSetupHistory({
+    asset:     assetKey,
+    direction: direction === 'BUY' ? 'BUY' : 'SELL',
+    regime,
+    session,
+  });
+
+  // Fallback: sem sessão (relaxa um filtro se amostra insuficiente)
+  const setupHistoryNoSession = !setupHistoryFull
+    ? tradeStore.getSetupHistory({ asset: assetKey, direction, regime })
+    : null;
+
+  // Fallback 2: só ativo + direção (máxima amostra)
+  const setupHistoryBase = (!setupHistoryFull && !setupHistoryNoSession)
+    ? tradeStore.getSetupHistory({ asset: assetKey, direction })
+    : null;
+
+  result.setupHistory = setupHistoryFull || setupHistoryNoSession || setupHistoryBase || null;
+  result.setupHistoryScope = setupHistoryFull   ? 'full'       // ativo+dir+regime+sessão
+                           : setupHistoryNoSession ? 'no_session' // ativo+dir+regime
+                           : setupHistoryBase      ? 'base'       // ativo+dir
+                           : 'none';
+
   // Scan mode: não grava no histórico nem envia Telegram
   if (!skipPersist) {
     tradeStore.appendSignal(result);

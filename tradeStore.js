@@ -600,6 +600,68 @@ function getStats({ asset } = {}) {
   };
 }
 
+// ===== HISTÓRICO DO SETUP ATUAL =====
+/**
+ * getSetupHistory({ asset, direction, regime, session })
+ *
+ * Filtra o histórico de sinais ao vivo pelo contexto exato do setup atual
+ * e retorna estatísticas de performance desse cruzamento específico.
+ *
+ * Retorna null se não houver dados suficientes (< 3 sinais avaliados).
+ */
+function getSetupHistory({ asset, direction, regime, session } = {}) {
+  try {
+    const all = readJSON(LIVE_SIGNAL_FILE, []);
+    if (!Array.isArray(all) || !all.length) return null;
+
+    // Filtra por contexto — cada parâmetro é opcional (undefined = sem filtro)
+    const resolved = all.filter(s => {
+      if (s.evaluation?.status === 'PENDING') return false;
+      if (asset     && s.asset                       !== asset)     return false;
+      if (direction && s.direction                   !== direction) return false;
+      if (regime    && s.audit?.regime               !== regime)    return false;
+      if (session   && s.audit?.session?.label       !== session)   return false;
+      return true;
+    });
+
+    if (resolved.length < 3) return null; // amostra insuficiente
+
+    const wins   = resolved.filter(s => s.evaluation?.outcomeType === 'TP_HIT' ||
+                                        (s.evaluation?.realizedPct ?? 0) > 0);
+    const losses = resolved.filter(s => s.evaluation?.outcomeType === 'SL_HIT' ||
+                                        (s.evaluation?.realizedPct ?? 0) < 0);
+
+    const winRate  = parseFloat(((wins.length / resolved.length) * 100).toFixed(1));
+    const avgPct   = resolved.reduce((acc, s) => acc + (s.evaluation?.realizedPct || 0), 0) / resolved.length;
+    const health   = winRate >= 60 ? 'STRONG' : winRate >= 45 ? 'MIXED' : 'WEAK';
+    const healthLabel = { STRONG: '✅ Forte', MIXED: '⚠️ Misto', WEAK: '❌ Fraco' }[health];
+
+    // Últimos 5 resultados (do mais recente para o mais antigo)
+    const recent = [...resolved]
+      .sort((a, b) => (b.evaluation?.evaluatedAt || 0) - (a.evaluation?.evaluatedAt || 0))
+      .slice(0, 5)
+      .map(s => {
+        const pct = s.evaluation?.realizedPct ?? 0;
+        return pct > 0 ? 'W' : pct < 0 ? 'L' : 'B';
+      });
+
+    return {
+      total:   resolved.length,
+      wins:    wins.length,
+      losses:  losses.length,
+      winRate,
+      avgPct:  parseFloat(avgPct.toFixed(3)),
+      health,
+      healthLabel,
+      recent,        // ex: ['W','W','L','W','B']
+      context: { asset, direction, regime, session },
+    };
+  } catch (e) {
+    console.warn('⚠️  getSetupHistory erro:', e.message);
+    return null;
+  }
+}
+
 // ===== GESTÃO DE RISCO ADAPTATIVA =====
 /**
  * getRiskState() — Lê o histórico de sinais ao vivo e retorna o nível de risco atual.
@@ -712,4 +774,5 @@ module.exports = {
   listLiveSignals,
   getLiveSignalStats,
   getRiskState,
+  getSetupHistory,
 };

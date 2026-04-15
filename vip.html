@@ -405,6 +405,10 @@
       <div class="card-title">🎯 Níveis Operacionais</div>
       <div id="levelsBlock"><div class="empty-state"><div class="emoji">📡</div>Aguardando sinal</div></div>
     </div>
+    <div class="card" id="setupHistoryCard" style="display:none">
+      <div class="card-title">📈 Histórico deste Setup</div>
+      <div id="setupHistoryBlock"></div>
+    </div>
   </div>
 
   <!-- REGISTRAR TRADE -->
@@ -777,6 +781,57 @@ function renderSignal(data) {
   } else {
     document.getElementById('levelsBlock').innerHTML = '<div class="empty-state"><div class="emoji">⏸</div>Sem níveis — aguardando sinal válido</div>';
     document.getElementById('tradeFormCard').style.display = 'none';
+  }
+
+  // ── Histórico do Setup ──
+  const sh = data.setupHistory || null;
+  const shCard  = document.getElementById('setupHistoryCard');
+  const shBlock = document.getElementById('setupHistoryBlock');
+  if (sh && shBlock && shCard) {
+    shCard.style.display = '';
+    const scopeLabel = {
+      full:       `${(sh.context.asset||'').toUpperCase()} · ${sh.context.direction} · ${sh.context.regime} · ${sh.context.session||'—'}`,
+      no_session: `${(sh.context.asset||'').toUpperCase()} · ${sh.context.direction} · ${sh.context.regime}`,
+      base:       `${(sh.context.asset||'').toUpperCase()} · ${sh.context.direction} (todos os contextos)`,
+    }[data.setupHistoryScope] || '—';
+
+    const healthColor = sh.health === 'STRONG' ? 'var(--green)' : sh.health === 'WEAK' ? 'var(--red)' : 'var(--gold)';
+    const recentDots  = (sh.recent || []).map(r =>
+      `<span style="font-size:13px;${r==='W'?'color:var(--green)':r==='L'?'color:var(--red)':'color:var(--muted)'}">${r==='W'?'●':r==='L'?'●':'○'}</span>`
+    ).join(' ');
+
+    shBlock.innerHTML = `
+      <div style="font-size:11px;color:var(--muted);margin-bottom:10px">${sanitize(scopeLabel)}</div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+        <div style="text-align:center;min-width:60px">
+          <div style="font-size:26px;font-weight:700;color:${healthColor}">${sh.winRate}%</div>
+          <div style="font-size:10px;color:var(--muted)">Win Rate</div>
+        </div>
+        <div style="text-align:center;min-width:50px">
+          <div style="font-size:20px;font-weight:700;color:var(--text)">${sh.total}</div>
+          <div style="font-size:10px;color:var(--muted)">Trades</div>
+        </div>
+        <div style="text-align:center;min-width:50px">
+          <div style="font-size:20px;font-weight:700;color:var(--green)">${sh.wins}</div>
+          <div style="font-size:10px;color:var(--muted)">Wins</div>
+        </div>
+        <div style="text-align:center;min-width:50px">
+          <div style="font-size:20px;font-weight:700;color:var(--red)">${sh.losses}</div>
+          <div style="font-size:10px;color:var(--muted)">Losses</div>
+        </div>
+        <div style="text-align:center;min-width:70px">
+          <div style="font-size:20px;font-weight:700;color:${(sh.avgPct||0)>=0?'var(--green)':'var(--red)'}">${sh.avgPct>=0?'+':''}${sh.avgPct}%</div>
+          <div style="font-size:10px;color:var(--muted)">Avg %</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:11px;color:var(--muted)">Últimos resultados:</span>
+        <span style="letter-spacing:4px">${recentDots}</span>
+      </div>
+      <div style="margin-top:10px;padding:8px 12px;background:rgba(255,255,255,.04);border-radius:8px;font-size:12px;color:${healthColor};font-weight:700">${sanitize(sh.healthLabel)} — ${sh.total} sinais com este perfil</div>
+    `;
+  } else if (shCard) {
+    shCard.style.display = 'none';
   }
 }
 
