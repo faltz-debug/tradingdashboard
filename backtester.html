@@ -948,6 +948,10 @@ const MASTER_SIGNAL_CFG = {
     adxTrendMin: 25,
     stopAtrMult: 1.5,
     takeAtrMult: 3.0,
+    // Slippage: % do preço de entrada, aplicado na direção desfavorável ao trader.
+    // LONG paga slippage acima do open, SHORT paga abaixo do open.
+    // 0.015% é realista para ativos líquidos (XAU, BTC, majors forex).
+    slippagePct: 0.015,
 };
 
 function classifyMasterSignal(score) {
@@ -1030,9 +1034,10 @@ const STRATEGIES = {
         name: '🧠 Master Signal + ADX + ATR',
         explain: `
             <strong>Estratégia: réplica do sinal mestre do servidor</strong><br><br>
-            <b>Compra:</b> EMA9 &gt; EMA20 &gt; EMA50 + RSI &gt; 55 + breakout das últimas 20 velas + ADX &ge; 25<br>
-            <b>Venda:</b> EMA9 &lt; EMA20 &lt; EMA50 + RSI &lt; 45 + breakdown das últimas 20 velas + ADX &ge; 25<br>
+            <b>Compra:</b> EMA9 &gt; EMA20 &gt; EMA50 + RSI &gt; 55 + breakout das últimas 30 velas + ADX &ge; 25<br>
+            <b>Venda:</b> EMA9 &lt; EMA20 &lt; EMA50 + RSI &lt; 45 + breakdown das últimas 30 velas + ADX &ge; 25<br>
             &nbsp;&nbsp;&nbsp;→ Stop = 1.5×ATR &nbsp;|&nbsp; Alvo = 3×ATR &nbsp;|&nbsp; Saída antecipada se o score perder força<br><br>
+            <b>Execução realista:</b> entrada no open da vela seguinte ao sinal (não no close da vela do sinal) + slippage 0.015% na direção desfavorável.<br>
             <i>Replica o núcleo direcional do servidor, incluindo o rebaixamento por ADX baixo, e respeita sessão, blackout de notícia e saída só após a vela de entrada.</i>
         `,
         hasSL: true,
@@ -1054,11 +1059,19 @@ const STRATEGIES = {
 
                 if (!inTrade) {
                     if (!signal.isTradable) continue;
+                    // Next-candle entry: sinal confirmado na vela i, fill no open da vela i+1.
+                    // Simula execução realista — impossível entrar no close da vela do sinal.
+                    // Se não houver próxima vela (fim do histórico), ignora o sinal.
+                    if (i + 1 >= candles.length) continue;
+                    const fillCandle = candles[i + 1];
+                    const slip = fillCandle.open * MASTER_SIGNAL_CFG.slippagePct / 100;
+
                     if (signal.rawScore === 3) {
-                        entryPrice = c.close;
+                        // LONG: paga slippage para cima (mercado corre antes do fill)
+                        entryPrice = fillCandle.open + slip;
                         slPrice = entryPrice - MASTER_SIGNAL_CFG.stopAtrMult * signal.atr;
                         tpPrice = entryPrice + MASTER_SIGNAL_CFG.takeAtrMult * signal.atr;
-                        inTrade = true; tradeType = 'COMPRA'; entryIdx = i; entryBarIdx = i;
+                        inTrade = true; tradeType = 'COMPRA'; entryIdx = i + 1; entryBarIdx = i + 1;
                         entryAudit = {
                             rawScore: signal.rawScore,
                             finalScore: signal.score,
@@ -1070,12 +1083,15 @@ const STRATEGIES = {
                             sessionOk: signal.sessionOk,
                             sessionLabel: signal.sessionLabel,
                             newsBlocked: signal.newsBlocked,
+                            slippagePct: MASTER_SIGNAL_CFG.slippagePct,
+                            fillOpen: fillCandle.open,
                         };
                     } else if (signal.rawScore === -3) {
-                        entryPrice = c.close;
+                        // SHORT: paga slippage para baixo (mercado corre contra antes do fill)
+                        entryPrice = fillCandle.open - slip;
                         slPrice = entryPrice + MASTER_SIGNAL_CFG.stopAtrMult * signal.atr;
                         tpPrice = entryPrice - MASTER_SIGNAL_CFG.takeAtrMult * signal.atr;
-                        inTrade = true; tradeType = 'VENDA'; entryIdx = i; entryBarIdx = i;
+                        inTrade = true; tradeType = 'VENDA'; entryIdx = i + 1; entryBarIdx = i + 1;
                         entryAudit = {
                             rawScore: signal.rawScore,
                             finalScore: signal.score,
@@ -1087,6 +1103,8 @@ const STRATEGIES = {
                             sessionOk: signal.sessionOk,
                             sessionLabel: signal.sessionLabel,
                             newsBlocked: signal.newsBlocked,
+                            slippagePct: MASTER_SIGNAL_CFG.slippagePct,
+                            fillOpen: fillCandle.open,
                         };
                     }
                 } else {
@@ -1631,6 +1649,7 @@ function runBacktest(asset, stratKey, btn) {
         <div class="summary-card" style="border-color:#00ff4133"><div class="s-label">🟢 Longs / WR</div><div class="s-value s-green">${longs.length} / ${wrL}%</div></div>
         <div class="summary-card" style="border-color:#ff335533"><div class="s-label">🔴 Shorts / WR</div><div class="s-value s-red">${shorts.length} / ${wrS}%</div></div>
         <div class="summary-card" style="border-color:#ffaa0055"><div class="s-label">💸 Custo/Trade</div><div class="s-value s-yellow" style="font-size:16px">−${costRound}%</div><div style="font-size:9px;color:#64748b;margin-top:4px">${costLabel}</div></div>
+        ${auditTrades.length ? `<div class="summary-card" style="border-color:#64748b55"><div class="s-label">🎯 Slippage</div><div class="s-value" style="color:#94a3b8;font-size:16px">0.015%</div><div style="font-size:9px;color:#64748b;margin-top:4px">next-candle open</div></div>` : ''}
         ${auditTrades.length ? `<div class="summary-card" style="border-color:#00d4ff55"><div class="s-label">🔎 ADX Médio Entrada</div><div class="s-value s-blue">${avgEntryAdx}</div><div style="font-size:9px;color:#64748b;margin-top:4px">Master Signal</div></div>` : ''}
         ${auditTrades.length ? `<div class="summary-card" style="border-color:#8b5cf655"><div class="s-label">🧾 Motivos Saída</div><div class="s-value" style="color:#c4b5fd;font-size:14px">${exitReasonLabel}</div><div style="font-size:9px;color:#64748b;margin-top:4px">TP / SL / força</div></div>` : ''}
         ${auditTrades.length ? `<div class="summary-card" style="border-color:#22c55e55"><div class="s-label">🌊 Trend Forte / WR</div><div class="s-value s-green">${strongTrendTrades.length} / ${calcWr(strongTrendTrades)}%</div><div style="font-size:9px;color:#64748b;margin-top:4px">ADX ≥ 40</div></div>` : ''}
