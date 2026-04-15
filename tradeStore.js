@@ -12,6 +12,8 @@ const DATA_DIR   = path.join(__dirname, 'data');
 const STORE_FILE = path.join(DATA_DIR, 'vip_trades.json');
 const SIGNAL_FILE = path.join(DATA_DIR, 'vip_signals.json');
 const LIVE_SIGNAL_FILE = path.join(DATA_DIR, 'live_signal_audit.json');
+const LIVE_SIGNAL_LIMIT = 5000;
+const LIVE_SIGNAL_MAX_AGE_MS = 180 * 24 * 60 * 60 * 1000;
 
 // Garante que o diretório data/ existe
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -52,6 +54,15 @@ if (!_trades.closed) _trades.closed = [];
 if (!Array.isArray(_signals)) _signals = [];
 if (!Array.isArray(_liveSignals)) _liveSignals = [];
 
+function pruneLiveSignals() {
+  const cutoff = Date.now() - LIVE_SIGNAL_MAX_AGE_MS;
+  _liveSignals = _liveSignals
+    .filter(item => (item?.createdAt || item?.emittedAt || 0) >= cutoff)
+    .slice(0, LIVE_SIGNAL_LIMIT);
+}
+
+pruneLiveSignals();
+
 function persistTrades() {
   writeJSON(STORE_FILE, _trades, _saveTradeTimer, (t) => { _saveTradeTimer = t; });
 }
@@ -59,6 +70,7 @@ function persistSignals() {
   writeJSON(SIGNAL_FILE, _signals, _saveSignalTimer, (t) => { _saveSignalTimer = t; });
 }
 function persistLiveSignals() {
+  pruneLiveSignals();
   writeJSON(LIVE_SIGNAL_FILE, _liveSignals, _saveLiveSignalTimer, (t) => { _saveLiveSignalTimer = t; });
 }
 
@@ -111,7 +123,7 @@ function appendLiveSignal(signalObj) {
   };
 
   _liveSignals.unshift(item);
-  if (_liveSignals.length > 3000) _liveSignals.length = 3000;
+  pruneLiveSignals();
   persistLiveSignals();
   return item;
 }
@@ -204,6 +216,130 @@ function listLiveSignals({ asset, status, limit = 100 } = {}) {
   return items.slice(0, limit);
 }
 
+function pickBestRow(group, groupMap, { preferPositive = true } = {}) {
+  return Object.entries(groupMap || {})
+    .map(([name, row]) => ({ group, name, ...row }))
+    .filter(row => row.total > 0)
+    .sort((a, b) => {
+      const aScore = (a.winRate || 0) + (a.sumPct || 0) * (preferPositive ? 2 : -2);
+      const bScore = (b.winRate || 0) + (b.sumPct || 0) * (preferPositive ? 2 : -2);
+      return preferPositive
+        ? (bScore - aScore) || (b.winRate - a.winRate) || (b.sumPct - a.sumPct)
+        : (aScore - bScore) || (a.winRate - b.winRate) || (a.sumPct - b.sumPct);
+    })[0] || null;
+}
+
+function buildDrawdownStats(resolved) {
+  let equity = 0;
+  let peak = 0;
+  let troughFromPeak = 0;
+  let maxDrawdownPct = 0;
+  const curve = [];
+
+  resolved.forEach(item => {
+    equity += item.evaluation?.realizedPct || 0;
+    peak = Math.max(peak, equity);
+    troughFromPeak = equity - peak;
+    maxDrawdownPct = Math.min(maxDrawdownPct, troughFromPeak);
+    curve.push({
+      at: item.evaluation?.evaluatedAt || item.createdAt || Date.now(),
+      equityPct: parseFloat(equity.toFixed(3)),
+      drawdownPct: parseFloat(troughFromPeak.toFixed(3)),
+    });
+  });
+
+  return {
+    curve,
+    cumulativePct: parseFloat(equity.toFixed(3)),
+    maxDrawdownPct: parseFloat(Math.abs(maxDrawdownPct).toFixed(3)),
+    currentDrawdownPct: parseFloat(Math.abs(troughFromPeak).toFixed(3)),
+  };
+}
+
+function buildStreakStats(resolved) {
+  let currentWin = 0;
+  let currentLoss = 0;
+  let maxWin = 0;
+  let maxLoss = 0;
+
+  resolved.forEach(item => {
+    const status = item.evaluation?.status;
+    if (status === 'WIN') {
+      currentWin += 1;
+      currentLoss = 0;
+    } else if (status === 'LOSS') {
+      currentLoss += 1;
+      currentWin = 0;
+    } else {
+      currentWin = 0;
+      currentLoss = 0;
+    }
+    maxWin = Math.max(maxWin, currentWin);
+    maxLoss = Math.max(maxLoss, currentLoss);
+  });
+
+  return {
+    currentWin,
+    currentLoss,
+    maxWin,
+    maxLoss,
+  };
+}
+
+function buildRecentStats(resolved, windowSize = 20) {
+  const recent = resolved.slice(-windowSize);
+  const wins = recent.filter(item => item.evaluation?.status === 'WIN').length;
+  const losses = recent.filter(item => item.evaluation?.status === 'LOSS').length;
+  const flats = recent.filter(item => item.evaluation?.status === 'FLAT').length;
+  const total = recent.length;
+  const avgPct = total
+    ? recent.reduce((sum, item) => sum + (item.evaluation?.realizedPct || 0), 0) / total
+    : 0;
+
+  let verdict = 'NEUTRO';
+  if (total >= 5 && wins / total >= 0.58 && avgPct > 0) verdict = 'QUENTE';
+  else if (total >= 5 && losses / total >= 0.5 && avgPct < 0) verdict = 'FRIO';
+
+  return {
+    windowSize,
+    total,
+    wins,
+    losses,
+    flats,
+    winRate: total ? parseFloat(((wins / total) * 100).toFixed(1)) : 0,
+    avgPct: parseFloat(avgPct.toFixed(3)),
+    verdict,
+  };
+}
+
+function buildDailyBreakdown(resolved, maxDays = 7) {
+  const map = {};
+  resolved.forEach(item => {
+    const ts = item.evaluation?.evaluatedAt || item.createdAt;
+    if (!ts) return;
+    const key = new Date(ts).toISOString().slice(0, 10);
+    if (!map[key]) map[key] = { total: 0, wins: 0, losses: 0, flats: 0, sumPct: 0 };
+    const row = map[key];
+    row.total++;
+    if (item.evaluation?.status === 'WIN') row.wins++;
+    else if (item.evaluation?.status === 'LOSS') row.losses++;
+    else row.flats++;
+    row.sumPct += item.evaluation?.realizedPct || 0;
+  });
+  return Object.entries(map)
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .slice(-maxDays)
+    .map(([date, row]) => ({
+      date,
+      total: row.total,
+      wins: row.wins,
+      losses: row.losses,
+      flats: row.flats,
+      winRate: row.total ? parseFloat(((row.wins / row.total) * 100).toFixed(1)) : 0,
+      sumPct: parseFloat(row.sumPct.toFixed(3)),
+    }));
+}
+
 function getLiveSignalStats({ asset } = {}) {
   let items = _liveSignals;
   if (asset) items = items.filter(s => s.asset === asset);
@@ -256,6 +392,13 @@ function getLiveSignalStats({ asset } = {}) {
   const bySession = groupMetric(item => item.audit?.session?.label);
   const byDirection = groupMetric(item => item.direction);
   const byOutcomeType = groupMetric(item => item.evaluation?.outcomeType);
+  const resolvedOrdered = [...resolved].sort((a, b) =>
+    ((a.evaluation?.evaluatedAt || a.createdAt || 0) - (b.evaluation?.evaluatedAt || b.createdAt || 0))
+  );
+  const drawdown = buildDrawdownStats(resolvedOrdered);
+  const streaks = buildStreakStats(resolvedOrdered);
+  const recent = buildRecentStats(resolvedOrdered, 20);
+  const recentDaily = buildDailyBreakdown(resolvedOrdered, 7);
   const rankedContexts = [
     ...buildRanking('asset', byAsset),
     ...buildRanking('regime', byRegime),
@@ -264,6 +407,17 @@ function getLiveSignalStats({ asset } = {}) {
   ];
   const strongContexts = rankedContexts.filter(r => r.health === 'STRONG').slice(0, 5);
   const weakContexts = rankedContexts.filter(r => r.health === 'WEAK').slice(0, 5);
+  const bestAsset = pickBestRow('asset', byAsset, { preferPositive: true });
+  const worstAsset = pickBestRow('asset', byAsset, { preferPositive: false });
+  const bestSession = pickBestRow('session', bySession, { preferPositive: true });
+  const worstRegime = pickBestRow('regime', byRegime, { preferPositive: false });
+
+  let operationalStatus = 'ESTAVEL';
+  if (recent.verdict === 'FRIO' || drawdown.currentDrawdownPct >= 1.5 || streaks.currentLoss >= 3) {
+    operationalStatus = 'DEFENSIVO';
+  } else if (recent.verdict === 'QUENTE' && drawdown.currentDrawdownPct <= 0.4 && streaks.currentLoss === 0) {
+    operationalStatus = 'AGRESSIVO_CONTROLADO';
+  }
 
   return {
     totalSignals: items.length,
@@ -282,6 +436,20 @@ function getLiveSignalStats({ asset } = {}) {
     rankedContexts,
     strongContexts,
     weakContexts,
+    recent,
+    recentDaily,
+    drawdown,
+    streaks,
+    executive: {
+      bestAsset,
+      worstAsset,
+      bestSession,
+      worstRegime,
+      operationalStatus,
+      historyStartAt: items[items.length - 1]?.createdAt || null,
+      historyEndAt: items[0]?.createdAt || null,
+      lastResolvedAt: resolvedOrdered[resolvedOrdered.length - 1]?.evaluation?.evaluatedAt || null,
+    },
   };
 }
 

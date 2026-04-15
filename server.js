@@ -2103,6 +2103,21 @@ app.get('/api/live-signals/stats', rateLimit, (req, res) => {
   res.json({ success: true, stats });
 });
 
+app.get('/api/live-signals/executive', rateLimit, (req, res) => {
+  const { asset } = req.query;
+  const stats = tradeStore.getLiveSignalStats({ asset });
+  res.json({
+    success: true,
+    executive: stats.executive || {},
+    recent: stats.recent || {},
+    recentDaily: stats.recentDaily || [],
+    drawdown: stats.drawdown || {},
+    streaks: stats.streaks || {},
+    strongContexts: stats.strongContexts || [],
+    weakContexts: stats.weakContexts || [],
+  });
+});
+
 // ===== AUTO-REFRESH + ALERTAS =====
 // Com fontes real-time ativas, o ciclo roda a cada 5 min para processar alertas.
 // Yahoo Finance (sempre disponível) mantém ciclos de 5 min; OANDA mantém 2 min.

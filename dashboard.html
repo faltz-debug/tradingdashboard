@@ -243,6 +243,80 @@
             margin-top: 6px;
             line-height: 1.6;
         }
+        .executive-panel {
+            display: none;
+            margin-bottom: 16px;
+            background: #0d1526;
+            border: 1px solid #1e3a5f;
+            border-radius: 12px;
+            padding: 18px 20px;
+        }
+        .executive-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 14px;
+            flex-wrap: wrap;
+        }
+        .executive-title {
+            font-size: 12px;
+            font-weight: 700;
+            color: #00d4ff;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .executive-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+        }
+        .executive-card {
+            background: #070b14;
+            border: 1px solid #1e3a5f;
+            border-radius: 10px;
+            padding: 14px;
+        }
+        .executive-card .ex-label {
+            font-size: 10px;
+            color: #64748b;
+            text-transform: uppercase;
+            margin-bottom: 6px;
+        }
+        .executive-card .ex-value {
+            font-size: 22px;
+            font-weight: 700;
+            line-height: 1.2;
+        }
+        .executive-card .ex-sub {
+            font-size: 10px;
+            color: #475569;
+            margin-top: 6px;
+            line-height: 1.6;
+        }
+        .ex-badge {
+            display: inline-block;
+            font-size: 10px;
+            padding: 3px 8px;
+            border-radius: 999px;
+            border: 1px solid #1e3a5f;
+            color: #94a3b8;
+            background: rgba(30,58,95,0.15);
+        }
+        .ex-badge.good { color: #00ff41; border-color: #00ff4144; background: rgba(0,255,65,0.08); }
+        .ex-badge.warn { color: #ffaa00; border-color: #ffaa0044; background: rgba(255,170,0,0.08); }
+        .ex-badge.bad { color: #ff3355; border-color: #ff335544; background: rgba(255,51,85,0.08); }
+        .executive-days {
+            display: grid;
+            gap: 6px;
+        }
+        .executive-day {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            font-size: 10px;
+            color: #94a3b8;
+        }
         .live-history-panel {
             display: none;
             margin-bottom: 24px;
@@ -428,6 +502,14 @@
             <div id="live-audit-meta" style="font-size:10px;color:#64748b">Avaliados após 4 candles de 15m</div>
         </div>
         <div class="live-audit-grid" id="live-audit-grid"></div>
+    </div>
+
+    <div class="executive-panel" id="executive-panel">
+        <div class="executive-head">
+            <div class="executive-title">Painel Executivo de Performance Real</div>
+            <div id="executive-meta" style="font-size:10px;color:#64748b">Lendo forma recente, drawdown e contexto</div>
+        </div>
+        <div class="executive-grid" id="executive-grid"></div>
     </div>
 
     <div class="live-history-panel" id="live-history-panel">
@@ -705,6 +787,7 @@ const state = {
     jpy: { data: null, tf: '1h', charts: {} }
 };
 let liveSignalStats = null;
+let liveExecutiveStats = null;
 let activeAsset = 'xau';
 
 // ─────────────────── PAGE SWITCHING (Dashboard / Calculator) ───────────────────
@@ -2062,12 +2145,94 @@ async function loadData() {
     }
 }
 
+function renderExecutivePanel(stats) {
+    const panel = document.getElementById('executive-panel');
+    const grid = document.getElementById('executive-grid');
+    const meta = document.getElementById('executive-meta');
+    if (!panel || !grid || !meta || !stats) return;
+
+    const executive = stats.executive || {};
+    const recent = stats.recent || {};
+    const drawdown = stats.drawdown || {};
+    const streaks = stats.streaks || {};
+    const daily = stats.recentDaily || [];
+
+    const statusMap = {
+        AGRESSIVO_CONTROLADO: { label: 'AGRESSIVO CONTROLADO', cls: 'good', color: '#00ff41' },
+        DEFENSIVO: { label: 'DEFENSIVO', cls: 'bad', color: '#ff3355' },
+        ESTAVEL: { label: 'ESTAVEL', cls: 'warn', color: '#ffaa00' },
+    };
+    const operational = statusMap[executive.operationalStatus] || statusMap.ESTAVEL;
+    const bestAsset = executive.bestAsset;
+    const worstAsset = executive.worstAsset;
+    const bestSession = executive.bestSession;
+    const worstRegime = executive.worstRegime;
+    const recentDaysHtml = daily.length
+        ? `<div class="executive-days">${daily.map(day => `
+            <div class="executive-day">
+                <span>${day.date}</span>
+                <span style="color:${day.sumPct >= 0 ? '#00ff41' : '#ff3355'}">${day.sumPct >= 0 ? '+' : ''}${day.sumPct}% • WR ${day.winRate}%</span>
+            </div>
+        `).join('')}</div>`
+        : '<div class="ex-sub">Ainda sem dias suficientes para resumir a curva recente.</div>';
+
+    meta.textContent = `Historico: ${stats.evaluated || 0} sinais avaliados • ultimo fechamento: ${executive.lastResolvedAt ? new Date(executive.lastResolvedAt).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}`;
+    panel.style.display = '';
+    grid.innerHTML = `
+        <div class="executive-card">
+            <div class="ex-label">Status Operacional</div>
+            <div class="ex-value" style="color:${operational.color}">${operational.label}</div>
+            <div class="ex-sub"><span class="ex-badge ${operational.cls}">${recent.verdict || 'NEUTRO'}</span> Forma recente do motor com bloqueios e drawdown considerados.</div>
+        </div>
+        <div class="executive-card">
+            <div class="ex-label">Melhor Ativo</div>
+            <div class="ex-value" style="color:#00ff41">${bestAsset ? bestAsset.name.toUpperCase() : '—'}</div>
+            <div class="ex-sub">${bestAsset ? `WR ${bestAsset.winRate}% • ${bestAsset.total} sinais • ${bestAsset.sumPct >= 0 ? '+' : ''}${bestAsset.sumPct}%` : 'Sem amostra suficiente por ativo.'}</div>
+        </div>
+        <div class="executive-card">
+            <div class="ex-label">Pior Ativo</div>
+            <div class="ex-value" style="color:#ff3355">${worstAsset ? worstAsset.name.toUpperCase() : '—'}</div>
+            <div class="ex-sub">${worstAsset ? `WR ${worstAsset.winRate}% • ${worstAsset.total} sinais • ${worstAsset.sumPct >= 0 ? '+' : ''}${worstAsset.sumPct}%` : 'Sem ativo ruim validado ainda.'}</div>
+        </div>
+        <div class="executive-card">
+            <div class="ex-label">Melhor Sessao</div>
+            <div class="ex-value" style="color:#5eead4;font-size:18px">${bestSession ? bestSession.name : '—'}</div>
+            <div class="ex-sub">${bestSession ? `WR ${bestSession.winRate}% • ${bestSession.total} sinais` : 'Sem sessao forte consolidada.'}</div>
+        </div>
+        <div class="executive-card">
+            <div class="ex-label">Pior Regime</div>
+            <div class="ex-value" style="color:#fda4af;font-size:18px">${worstRegime ? worstRegime.name : '—'}</div>
+            <div class="ex-sub">${worstRegime ? `WR ${worstRegime.winRate}% • ${worstRegime.total} sinais` : 'Sem regime fraco consolidado.'}</div>
+        </div>
+        <div class="executive-card">
+            <div class="ex-label">Drawdown Live</div>
+            <div class="ex-value" style="color:${(drawdown.currentDrawdownPct || 0) > 0.8 ? '#ff3355' : '#ffaa00'}">${drawdown.currentDrawdownPct || 0}%</div>
+            <div class="ex-sub">Atual • maximo: ${drawdown.maxDrawdownPct || 0}% • curva acumulada: ${drawdown.cumulativePct >= 0 ? '+' : ''}${drawdown.cumulativePct || 0}%</div>
+        </div>
+        <div class="executive-card">
+            <div class="ex-label">Forma Recente</div>
+            <div class="ex-value" style="color:${(recent.avgPct || 0) >= 0 ? '#00d4ff' : '#ff3355'}">${recent.winRate || 0}%</div>
+            <div class="ex-sub">Ultimos ${recent.windowSize || 20}: media ${recent.avgPct >= 0 ? '+' : ''}${recent.avgPct || 0}% • W ${recent.wins || 0} / L ${recent.losses || 0} / F ${recent.flats || 0}</div>
+        </div>
+        <div class="executive-card">
+            <div class="ex-label">Streak Atual</div>
+            <div class="ex-value" style="color:${(streaks.currentLoss || 0) >= 2 ? '#ff3355' : '#a78bfa'}">W${streaks.currentWin || 0} / L${streaks.currentLoss || 0}</div>
+            <div class="ex-sub">Max win: ${streaks.maxWin || 0} • max loss: ${streaks.maxLoss || 0}</div>
+        </div>
+        <div class="executive-card">
+            <div class="ex-label">Ultimos 7 Dias</div>
+            ${recentDaysHtml}
+        </div>
+    `;
+}
+
 async function loadLiveSignalStats() {
     try {
         const res = await fetch('/api/live-signals/stats');
         const data = await res.json();
         const stats = data?.stats;
         liveSignalStats = stats || null;
+        liveExecutiveStats = stats?.executive || null;
         const panel = document.getElementById('live-audit-panel');
         const grid = document.getElementById('live-audit-grid');
         const meta = document.getElementById('live-audit-meta');
@@ -2133,6 +2298,8 @@ async function loadLiveSignalStats() {
             </div>
         `;
 
+        renderExecutivePanel(stats);
+
         ['xau', 'btc', 'eur', 'jpy'].forEach(assetKey => {
             if (state[assetKey]?.data?.success) renderStrategies(assetKey);
         });
@@ -2140,6 +2307,8 @@ async function loadLiveSignalStats() {
     } catch (e) {
         const panel = document.getElementById('live-audit-panel');
         if (panel) panel.style.display = 'none';
+        const executivePanel = document.getElementById('executive-panel');
+        if (executivePanel) executivePanel.style.display = 'none';
     }
 }
 
