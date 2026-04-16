@@ -1844,7 +1844,8 @@ function renderTradesTable(asset, candles, trades){
         return;
     }
     const fmt = v => asset==='btc' ? '$'+Math.round(v).toLocaleString() : asset==='eur' ? v.toFixed(5) : asset==='jpy' ? v.toFixed(3) : '$'+v.toFixed(2);
-    const hasSlTp  = trades.some(t => t.sl != null);
+    const hasSL    = trades.some(t => t.sl != null && !isNaN(t.sl));
+    const hasTP    = trades.some(t => t.tp != null && !isNaN(t.tp));
     const hasPat   = confluenceEnabled && trades.some(t => t.pattern);
     const hasAudit = trades.some(t => t.audit);
 
@@ -1876,16 +1877,16 @@ function renderTradesTable(asset, candles, trades){
     // Update table headers
     const thead = document.querySelector('#'+asset+'-trades-table thead tr');
     const patHead = hasPat ? '<th style="color:#10b981">🕯️ Padrão</th>' : '';
-    thead.innerHTML = hasSlTp
-        ? `<th>#</th><th>Entrada</th><th>Saída</th><th>Tipo</th>${patHead}${reasonHead}${auditHead}<th>Preço Entrada</th><th>🛑 Stop Loss</th><th>🎯 Take Profit</th><th>Preço Saída</th><th>Resultado %</th><th>Resultado $</th>`
-        : `<th>#</th><th>Entrada</th><th>Saída</th><th>Tipo</th>${patHead}${reasonHead}${auditHead}<th>Preço Entrada</th><th>Preço Saída</th><th>Resultado %</th><th>Resultado $</th>`;
+    const slHead = hasSL ? `<th style="color:#ff3355">🛑 Stop</th>` : '';
+    const tpHead = hasTP ? `<th style="color:#00ff41">🎯 Alvo</th>` : '';
+    thead.innerHTML = `<th>#</th><th>Entrada</th><th>Saída</th><th>Tipo/Resultado</th>${patHead}${reasonHead}${auditHead}<th>Preço Entrada</th>${slHead}${tpHead}<th>Preço Saída</th><th>Resultado %</th><th>Resultado $</th>`;
     let equity=1000;
     tbody.innerHTML = trades.map((t,i)=>{
         const earn = equity*(t.pct/100);
         equity += earn;
-        const slTpCols = hasSlTp
-            ? `<td style="color:#ff335599">${t.sl ? fmt(t.sl) : '—'}</td><td style="color:#00ff4199">${t.tp ? fmt(t.tp) : '—'}</td>`
-            : '';
+        const slCol = hasSL ? `<td style="color:#ff3355aa">${(t.sl != null && !isNaN(t.sl)) ? fmt(t.sl) : '—'}</td>` : '';
+        const tpCol = hasTP ? `<td style="color:#00ff41aa">${(t.tp != null && !isNaN(t.tp)) ? fmt(t.tp) : '—'}</td>` : '';
+        const slTpCols = slCol + tpCol;
         const patCol = hasPat
             ? `<td style="color:#10b981;font-size:10px">${t.pattern||'—'}</td>`
             : '';
@@ -1897,7 +1898,7 @@ function renderTradesTable(asset, candles, trades){
             <td>${i+1}</td>
             <td>${new Date(candles[t.entryIdx].time*1000).toLocaleDateString('pt-BR')}</td>
             <td>${new Date(candles[t.exitIdx].time*1000).toLocaleDateString('pt-BR')}</td>
-            <td>${t.type==='COMPRA'?'🟢 COMPRA':'🔴 VENDA'}</td>
+            <td>${t.type==='COMPRA'?'🟢':'🔴'} ${t.type} <span style="font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:${t.win?'rgba(0,255,65,.15)':'rgba(255,51,85,.15)'};color:${t.win?'#00ff41':'#ff3355'};border:1px solid ${t.win?'#00ff4144':'#ff335544'}">${t.win?'WIN':'LOSS'}</span></td>
             ${patCol}
             ${reasonCol}
             ${auditCol}
