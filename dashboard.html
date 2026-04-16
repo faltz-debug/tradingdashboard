@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Trading Dashboard PRO v4 — Candlestick + Indicadores</title>
     <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+    <!-- Fonte única de verdade para parâmetros do Master Signal (shared com server.js) -->
+    <script src="/signal-config.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -956,8 +958,8 @@ function getIndicators(asset) {
         rsi: rsiArr[last],
         macdVal: macd.macdLine[last], sigVal: macd.signalLine[last],
         adx: adxResult.adx, pdi: adxResult.pdi, mdi: adxResult.mdi,
-        adxOk: adxResult.adx >= 25,
-        adxTrend: adxResult.adx >= 40 ? 'FORTE' : adxResult.adx >= 25 ? 'MODERADA' : adxResult.adx >= 15 ? 'FRACA' : 'LATERAL',
+        adxOk: adxResult.adx >= MASTER_SIGNAL_CFG.adxTrendMin,
+        adxTrend: adxResult.adx >= MASTER_SIGNAL_CFG.adxStrong ? 'FORTE' : adxResult.adx >= MASTER_SIGNAL_CFG.adxTrendMin ? 'MODERADA' : adxResult.adx >= 15 ? 'FRACA' : 'LATERAL',
         price: closes[last],
         fmt: v => asset === 'btc' ? '$' + Math.round(v).toLocaleString()
               : asset === 'eur' ? v.toFixed(5)
@@ -1372,9 +1374,9 @@ function renderStrategies(asset) {
     const rsi     = ind.rsi;
     const macd    = ind.macdVal;
     const sig     = ind.sigVal;
-    const rsiMomentumSig = rsi > 55 ? 'COMPRA' : rsi < 45 ? 'VENDA' : 'NEUTRO';
+    const rsiMomentumSig = rsi > MASTER_SIGNAL_CFG.rsiBullish ? 'COMPRA' : rsi < MASTER_SIGNAL_CFG.rsiBearish ? 'VENDA' : 'NEUTRO';
     let rsiMomentumConf  = 35;
-    if (rsi > 55 || rsi < 45) rsiMomentumConf = 65 + Math.min(25, Math.round(Math.abs(rsi - 50)));
+    if (rsi > MASTER_SIGNAL_CFG.rsiBullish || rsi < MASTER_SIGNAL_CFG.rsiBearish) rsiMomentumConf = 65 + Math.min(25, Math.round(Math.abs(rsi - 50)));
     rsiMomentumConf = Math.min(95, rsiMomentumConf);
     const last5Low   = Math.min(...candles.slice(-5).map(c => c.low));
     const last5High  = Math.max(...candles.slice(-5).map(c => c.high));
@@ -1414,20 +1416,20 @@ function renderStrategies(asset) {
         const brkDown = ibCurrent.close < ibMother.low;
         const trendUp   = ema9 > ema50;
         const trendDown = ema9 < ema50;
-        const adxOkIb   = ind.adxResult?.adx >= 25;
+        const adxOkIb   = ind.adxResult?.adx >= MASTER_SIGNAL_CFG.adxTrendMin;
 
         if (brkUp && trendUp) {
             ibSig  = 'COMPRA';
             ibSLval = ibMother.low - ibAtr * 0.1;
             ibConf = 60;
             if (adxOkIb) ibConf += 20;
-            if (rsi > 55) ibConf += 10;
+            if (rsi > MASTER_SIGNAL_CFG.rsiBullish) ibConf += 10;
         } else if (brkDown && trendDown) {
             ibSig  = 'VENDA';
             ibSLval = ibMother.high + ibAtr * 0.1;
             ibConf = 60;
             if (adxOkIb) ibConf += 20;
-            if (rsi < 45) ibConf += 10;
+            if (rsi < MASTER_SIGNAL_CFG.rsiBearish) ibConf += 10;
         } else {
             // Inside bar formada mas sem rompimento ainda
             ibSig  = 'AGUARDAR ROMPIMENTO';
@@ -1441,7 +1443,7 @@ function renderStrategies(asset) {
     const rsiConf = rsi < 30 || rsi > 70 ? Math.round(50 + Math.abs(rsi - 50)) : 35;
 
     // ─── Breakout (20 períodos — exclui vela atual) ───
-    const prevBkCandles = candles.slice(-21, -1);
+    const prevBkCandles = candles.slice(-(MASTER_SIGNAL_CFG.breakoutLookback + 1), -1);
     const bkHigh     = prevBkCandles.length ? Math.max(...prevBkCandles.map(c => c.high)) : price;
     const bkLow      = prevBkCandles.length ? Math.min(...prevBkCandles.map(c => c.low))  : price;
     // last5Low / last5High já declarados acima
@@ -1553,15 +1555,15 @@ function renderStrategies(asset) {
             ['Tendência EMA', ema9 > ema50 ? '📈 Alta (EMA9 > EMA50)' : ema9 < ema50 ? '📉 Baixa (EMA9 < EMA50)' : '↔️ Lateral']
         ], ibSig, ibConf, ibSLval ? entryBlock(ibSig, price, ibSLval) : '') +
 
-        card('📊 RSI Momentum (55/45)', [
+        card(`📊 RSI Momentum (${MASTER_SIGNAL_CFG.rsiBullish}/${MASTER_SIGNAL_CFG.rsiBearish})`, [
             ['RSI atual', rsi.toFixed(1)],
-            ['Zona', rsi > 55 ? 'Impulso comprador' : rsi < 45 ? 'Impulso vendedor' : 'Faixa neutra'],
-            ['Confirmação', rsiMomentumSig === 'COMPRA' ? 'RSI > 55' : rsiMomentumSig === 'VENDA' ? 'RSI < 45' : 'Aguardando saída da faixa 45–55']
+            ['Zona', rsi > MASTER_SIGNAL_CFG.rsiBullish ? 'Impulso comprador' : rsi < MASTER_SIGNAL_CFG.rsiBearish ? 'Impulso vendedor' : 'Faixa neutra'],
+            ['Confirmação', rsiMomentumSig === 'COMPRA' ? `RSI > ${MASTER_SIGNAL_CFG.rsiBullish}` : rsiMomentumSig === 'VENDA' ? `RSI < ${MASTER_SIGNAL_CFG.rsiBearish}` : `Aguardando saída da faixa ${MASTER_SIGNAL_CFG.rsiBearish}–${MASTER_SIGNAL_CFG.rsiBullish}`]
         ], rsiMomentumSig, rsiMomentumConf, rsiMomentumSLval ? entryBlock(rsiMomentumSig, price, rsiMomentumSLval) : '') +
 
-        card('🚀 Breakout (20 períodos)', [
-            ['Máxima 20 velas', fmt(bkHigh)],
-            ['Mínima 20 velas', fmt(bkLow)],
+        card(`🚀 Breakout (${MASTER_SIGNAL_CFG.breakoutLookback} períodos)`, [
+            [`Máxima ${MASTER_SIGNAL_CFG.breakoutLookback} velas`, fmt(bkHigh)],
+            [`Mínima ${MASTER_SIGNAL_CFG.breakoutLookback} velas`, fmt(bkLow)],
             ['Posição', price > bkHigh ? '🔼 Acima da máxima' : price < bkLow ? '🔽 Abaixo da mínima' : '↔️ Dentro do range'],
             ['Range', fmt(bkHigh - bkLow)]
         ], bkSig.replace(' ↑','').replace(' ↓',''), bkConf, bkSLval ? entryBlock(bkSig.replace(' ↑','').replace(' ↓',''), price, bkSLval) : '');

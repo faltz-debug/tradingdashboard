@@ -6,6 +6,10 @@ const fs        = require('fs');
 const path      = require('path');
 const WebSocket = require('ws');
 
+// Fonte única de verdade para parâmetros do Master Signal
+// (compartilhado com backtester.html e dashboard.html via /signal-config.js)
+const MASTER_SIGNAL_CFG = require('./signal-config');
+
 const app = express();
 
 // CORS: aceita o domínio do Railway + localhost para desenvolvimento
@@ -778,12 +782,11 @@ function computeSignals(candles15m, assetName, dec, tf = '15M') {
   const emaSig = ema9 > ema20 ? 'COMPRA' : 'VENDA';
 
   // 3. RSI Momentum — confirma força da tendência (≠ RSI Reversão que usa 30/70)
-  // RSI > 55 = momentum bullish ativo | RSI < 45 = momentum bearish ativo | 45-55 = sem direção
-  const rsiTrendSig = rsi > 55 ? 'COMPRA' : rsi < 45 ? 'VENDA' : 'NEUTRO';
+  const rsiTrendSig = rsi > MASTER_SIGNAL_CFG.rsiBullish ? 'COMPRA'
+                    : rsi < MASTER_SIGNAL_CFG.rsiBearish ? 'VENDA' : 'NEUTRO';
 
   // 4. Breakout (exclui vela atual — senão close nunca > próprio high)
-  // Lookback 30 candles — alinhado com o backtester (era 20, gerava breakouts fáceis demais)
-  const prevCandles = candles15m.slice(-31, -1);
+  const prevCandles = candles15m.slice(-(MASTER_SIGNAL_CFG.breakoutLookback + 1), -1);
   const bkHigh = prevCandles.length ? Math.max(...prevCandles.map(c => c.high)) : price;
   const bkLow  = prevCandles.length ? Math.min(...prevCandles.map(c => c.low))  : price;
   let bkSig = 'AGUARDAR';
@@ -811,17 +814,17 @@ function computeSignals(candles15m, assetName, dec, tf = '15M') {
   const atr = calcATR(candles15m);
   let entry = price, sl = null, tp = null;
   if (score > 0) {
-    sl = price - 1.5 * atr;
-    tp = price + 3.0 * atr;
+    sl = price - MASTER_SIGNAL_CFG.stopAtrMult * atr;
+    tp = price + MASTER_SIGNAL_CFG.takeAtrMult * atr;
   } else if (score < 0) {
-    sl = price + 1.5 * atr;
-    tp = price - 3.0 * atr;
+    sl = price + MASTER_SIGNAL_CFG.stopAtrMult * atr;
+    tp = price - MASTER_SIGNAL_CFG.takeAtrMult * atr;
   }
 
   // ADX — força da tendência
   const { adx, pdi, mdi } = calcADX(candles15m);
-  const adxTrend    = adx >= 40 ? 'FORTE'    : adx >= 25 ? 'MODERADA' : adx >= 15 ? 'FRACA' : 'LATERAL';
-  const adxOk       = adx >= 25;   // abaixo de 25 = mercado lateral, tendência pouco confiável
+  const adxTrend    = adx >= MASTER_SIGNAL_CFG.adxStrong ? 'FORTE' : adx >= MASTER_SIGNAL_CFG.adxTrendMin ? 'MODERADA' : adx >= 15 ? 'FRACA' : 'LATERAL';
+  const adxOk       = adx >= MASTER_SIGNAL_CFG.adxTrendMin;
   const adxDir      = pdi > mdi ? '↑' : '↓';
 
   // S/R + Divergência
@@ -1732,12 +1735,12 @@ async function computeVipSignal(assetKey, entryTf = '15m', biasTf = '1h', { skip
   // FILTRO 2: EMAs alinhadas no entry TF
   const filterEma = emaAligned(closes, direction);
 
-  // FILTRO 3: Breakout de 20 barras
-  const filterBreakout = hasBreakout(entryCandles, direction, 20);
+  // FILTRO 3: Breakout
+  const filterBreakout = hasBreakout(entryCandles, direction, MASTER_SIGNAL_CFG.breakoutLookback);
 
-  // FILTRO 4: ADX >= 25
+  // FILTRO 4: ADX
   const { adx, pdi, mdi } = calcADX(entryCandles);
-  const filterAdx = adx >= 25;
+  const filterAdx = adx >= MASTER_SIGNAL_CFG.adxTrendMin;
 
   // FILTRO 5A: Sessão ideal
   const sessionInfo = getSessionInfo(assetKey);
@@ -1759,17 +1762,17 @@ async function computeVipSignal(assetKey, entryTf = '15m', biasTf = '1h', { skip
   const atr = calcATR(entryCandles) || (price * 0.001);
   let entry = price, sl, tp;
   if (direction === 'BUY') {
-    sl = parseFloat((entry - 1.5 * atr).toFixed(cfg.decimals));
-    tp = parseFloat((entry + 3.0 * atr).toFixed(cfg.decimals));
+    sl = parseFloat((entry - MASTER_SIGNAL_CFG.stopAtrMult * atr).toFixed(cfg.decimals));
+    tp = parseFloat((entry + MASTER_SIGNAL_CFG.takeAtrMult * atr).toFixed(cfg.decimals));
   } else {
-    sl = parseFloat((entry + 1.5 * atr).toFixed(cfg.decimals));
-    tp = parseFloat((entry - 3.0 * atr).toFixed(cfg.decimals));
+    sl = parseFloat((entry + MASTER_SIGNAL_CFG.stopAtrMult * atr).toFixed(cfg.decimals));
+    tp = parseFloat((entry - MASTER_SIGNAL_CFG.takeAtrMult * atr).toFixed(cfg.decimals));
   }
 
   const vipOperationalContext = getOperationalContext(assetKey, {
     score,
     audit: {
-      regime: adx >= 40 ? 'TREND_FORTE' : adx >= 25 ? 'TREND_MODERADA' : adx >= 15 ? 'TREND_FRACA' : 'LATERAL',
+      regime: adx >= MASTER_SIGNAL_CFG.adxStrong ? 'TREND_FORTE' : adx >= MASTER_SIGNAL_CFG.adxTrendMin ? 'TREND_MODERADA' : adx >= 15 ? 'TREND_FRACA' : 'LATERAL',
       session: { isGood: filterSession, label: sessionInfo.sessionStr },
       news: { isBlocked: newsBlocked, name: newsInfo.nearName, time: newsInfo.nearTimeStr },
     }

@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Backtester — Estratégia EMA Tendência</title>
     <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+    <!-- Fonte única de verdade para parâmetros do Master Signal (shared com server.js) -->
+    <script src="/signal-config.js"></script>
     <style>
         * { margin:0; padding:0; box-sizing:border-box; }
         body { font-family:'Courier New',monospace; background:#0a0e1a; color:#e2e8f0; padding:20px; }
@@ -975,22 +977,8 @@ function isNewsBlackoutTime(timestampSec) {
     return false;
 }
 
-const MASTER_SIGNAL_CFG = {
-    breakoutLookback: 30,
-    rsiBullish: 55,
-    rsiBearish: 45,
-    adxTrendMin: 25,
-    stopAtrMult: 1.5,
-    takeAtrMult: 3.0,
-    // Slippage base: % do preço de entrada, aplicado na direção desfavorável ao trader.
-    // LONG paga slippage acima do open, SHORT paga abaixo do open.
-    // 0.015% é realista para ativos líquidos (XAU, BTC, majors forex).
-    slippagePct: 0.015,
-    // Spread em notícias: multiplicador aplicado ao slippage durante janelas de news.
-    // Em eventos como NFP, FOMC e CPI o spread real pode triplicar ou mais.
-    // 3x é conservador — em BTC pode chegar a 5-10x nos primeiros segundos.
-    newsSpreadMult: 3.0,
-};
+// MASTER_SIGNAL_CFG é carregado de /signal-config.js (fonte única de verdade).
+// Não duplicar aqui — qualquer mudança deve ser feita apenas em signal-config.js.
 
 function classifyMasterSignal(score) {
     if (score >= 3) return { label: 'FORTE COMPRA', bias: 'LONG' };
