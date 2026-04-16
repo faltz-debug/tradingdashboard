@@ -10,6 +10,9 @@ const WebSocket = require('ws');
 // (compartilhado com backtester.html e dashboard.html via /signal-config.js)
 const MASTER_SIGNAL_CFG = require('./signal-config');
 
+// Logger estruturado com níveis e timestamps (configurável via LOG_LEVEL env var)
+const logger = require('./logger');
+
 const app = express();
 
 // CORS: aceita o domínio do Railway + localhost para desenvolvimento
@@ -107,11 +110,11 @@ function loadLastSignals() {
     if (fs.existsSync(SIGNALS_FILE)) {
       const raw = fs.readFileSync(SIGNALS_FILE, 'utf8');
       const data = JSON.parse(raw);
-      console.log('📂 lastSignals restaurado do disco');
+      logger.info('lastSignals restaurado do disco');
       return data;
     }
   } catch (e) {
-    console.log('⚠️  Erro ao ler lastSignals.json — iniciando vazio:', e.message);
+    logger.warn('Erro ao ler lastSignals.json — iniciando vazio:', e.message);
   }
   return {};
 }
@@ -129,12 +132,12 @@ function saveLastSignals() {
     const data = JSON.stringify(lastSignals, null, 2);
     fs.writeFile(tmpFile, data, (err) => {
       if (err) {
-        console.log('⚠️  Erro ao salvar lastSignals.json:', err.message);
+        logger.warn('Erro ao salvar lastSignals.json:', err.message);
         _saveInProgress = false;
         return;
       }
       fs.rename(tmpFile, SIGNALS_FILE, (renameErr) => {
-        if (renameErr) console.log('⚠️  Erro ao renomear lastSignals.tmp:', renameErr.message);
+        if (renameErr) logger.warn('Erro ao renomear lastSignals.tmp:', renameErr.message);
         _saveInProgress = false;
       });
     });
@@ -158,17 +161,17 @@ async function axiosWithRetry(fn, { maxRetries = 3, baseDelayMs = 1000, label = 
       const status = err.response?.status;
       // 4xx (exceto 429 Too Many Requests) são erros definitivos — não adianta retentar
       if (status && status >= 400 && status < 500 && status !== 429) {
-        console.warn(`⚠️  ${label}: erro ${status} — não vou retentar`);
+        logger.warn(`${label}: erro HTTP ${status} — não retentar`);
         throw err;
       }
       if (attempt < maxRetries) {
         const delay = baseDelayMs * Math.pow(2, attempt - 1); // 1s, 2s, 4s
-        console.warn(`⚠️  ${label}: tentativa ${attempt}/${maxRetries} falhou (${err.message}) — aguardando ${delay}ms`);
+        logger.warn(`${label}: tentativa ${attempt}/${maxRetries} falhou (${err.message}) — retry em ${delay}ms`);
         await new Promise(r => setTimeout(r, delay));
       }
     }
   }
-  console.error(`❌ ${label}: todas as ${maxRetries} tentativas falharam — ${lastErr.message}`);
+  logger.error(`${label}: todas as ${maxRetries} tentativas falharam — ${lastErr.message}`);
   throw lastErr;
 }
 
@@ -180,10 +183,10 @@ async function sendTelegram(message) {
       text: message,
       parse_mode: 'HTML'
     }, { timeout: 8000 });
-    console.log('📨 Telegram enviado!');
+    logger.info('Telegram enviado');
   } catch (err) {
     // Loga e RELANÇA — quem chama decide se ignora ou propaga
-    console.error('⚠️  Telegram erro:', err.response?.data?.description || err.message);
+    logger.error('Telegram erro:', err.response?.data?.description || err.message);
     throw err;
   }
 }
@@ -396,11 +399,11 @@ async function fetchEconomicCalendar() {
         .filter(e => !isNaN(e.time));
 
       newsCache = { data: events, updatedAt: now };
-      console.log(`📅 Calendário: ${events.length} eventos de alto impacto carregados`);
+      logger.info(`Calendário: ${events.length} eventos de alto impacto carregados`);
       return events;
     }
   } catch (err) {
-    console.log(`📅 Calendário API falhou: ${err.message} — usando recorrentes`);
+    logger.warn(`Calendário API falhou: ${err.message} — usando recorrentes`);
   }
 
   // Fallback: gerar eventos recorrentes baseados na data atual
@@ -955,17 +958,17 @@ async function checkAndSendAlerts(key, data) {
 
   // CRÍTICO: nunca dispara alerta baseado em dados simulados
   if (data.isSimulation) {
-    console.log(`🚫 Alerta ${key} suprimido: fonte é Simulação — sem dados reais da API`);
+    logger.debug(`Alerta suprimido - ${key} suprimido: fonte é Simulação — sem dados reais da API`);
     return;
   }
   // Não dispara alerta com mercado fechado
   if (data.isMarketClosed) {
-    console.log(`🔒 Alerta ${key} suprimido: mercado fechado`);
+    logger.debug(`Alerta suprimido (mercado fechado) - ${key} suprimido: mercado fechado`);
     return;
   }
   // Grace period: após restart, espera 2min para estabilizar dados antes de alertar
   if (Date.now() - SERVER_START_AT < STARTUP_GRACE_MS) {
-    console.log(`⏳ Alerta ${key} suprimido: grace period pós-restart`);
+    logger.debug(`Alerta suprimido (grace period) - ${key} suprimido: grace period pós-restart`);
     return;
   }
 
@@ -1027,7 +1030,7 @@ async function checkAndSendAlerts(key, data) {
       : adxBlocked
       ? `ADX baixo (${s.adx.toFixed(1)}) — mercado lateral`
       : `Sem confluência 1H — sinal fraco`;
-    console.log(`🚫 Alerta ${cfg.name} suprimido: ${reason}`);
+    logger.debug(`Alerta suprimido - ${cfg.name} suprimido: ${reason}`);
   }
 
   // ===== RISCO ADAPTATIVO =====
@@ -1053,7 +1056,7 @@ async function checkAndSendAlerts(key, data) {
       : riskAssetBlocked
       ? `⚠️ Modo DEFENSIVO — ${key.toUpperCase()} suspenso (${riskState.reason})`
       : `⚠️ Score ${s.score} insuficiente para modo ${riskState.level} (mín: ${riskState.minScore})`;
-    console.log(`${riskReason}`);
+    logger.info(riskReason);
   }
 
   // Envio de alerta de transição para modo BLOCKED (uma vez por ciclo de ativo)
@@ -1114,7 +1117,7 @@ async function checkAndSendAlerts(key, data) {
       saveLastSignals();
     } catch (err) {
       // Falha na entrega: não atualiza lastSentAt para tentar de novo no próximo ciclo
-      console.error(`❌ Falha ao entregar alerta ${cfg.name} — será retentado no próximo ciclo`);
+      logger.error(`Falha ao entregar alerta ${cfg.name} — será retentado no próximo ciclo`);
     }
   } else {
     // Atualiza estado mas sem enviar
@@ -1191,7 +1194,7 @@ function validateCandles(candles, source) {
     return true;
   });
   const removed = candles.length - valid.length;
-  if (removed > 0) console.log(`⚠️  ${source}: ${removed} candles inválidos removidos de ${candles.length}`);
+  if (removed > 0) logger.warn(` ${source}: ${removed} candles inválidos removidos de ${candles.length}`);
   return valid;
 }
 
@@ -1281,9 +1284,9 @@ async function pollBtcKraken() {
   try {
     const data = await fetchBtcFromKraken();
     cache['btc'] = { data, updatedAt: Date.now() };
-    console.log(`⚡ BTC Kraken: $${data.price.toFixed(0)}`);
+    logger.debug(`BTC Kraken: $${data.price.toFixed(0)}`);
   } catch (e) {
-    console.log('⚠️  Kraken poll BTC:', e.message, '— mantendo cache anterior');
+    logger.warn('Kraken poll BTC:', e.message, '— mantendo cache anterior');
   }
 }
 
@@ -1293,7 +1296,7 @@ async function loadBtcHistory() {
 }
 function connectBinanceWS() {
   // Binance bloqueado nos EUA (Railway us-west). Usando Kraken como fonte de BTC.
-  console.log('ℹ️  Binance desabilitado (bloqueio 451 EUA) — BTC via Kraken polling a cada 2min');
+  logger.info('Binance desabilitado (bloqueio 451 EUA) — BTC via Kraken polling a cada 2min');
 }
 
 // ===== OANDA POLLING — XAU/EUR/JPY TEMPO REAL =====
@@ -1343,9 +1346,9 @@ async function pollOanda() {
       const cfg  = ASSETS[key];
       const data = { ...await fetchFromOanda(key), asset: cfg.name, updatedAt: Date.now() };
       cache[key] = { data, updatedAt: Date.now() };
-      console.log(`⚡ OANDA ${cfg.name}: ${data.price.toFixed(cfg.decimals)}`);
+      logger.debug(`OANDA ${cfg.name}: ${data.price.toFixed(cfg.decimals)}`);
     } catch (e) {
-      console.log(`⚠️  OANDA poll ${key}: ${e.message}`);
+      logger.warn(`OANDA poll ${key}: ${e.message}`);
     }
   }
 }
@@ -1456,9 +1459,9 @@ async function pollYahoo() {
       const now  = Date.now();
       const data = { ...await fetchFromYahoo(key), asset: cfg.name, updatedAt: now, nextUpdateAt: now + 5 * 60 * 1000 };
       cache[key] = { data, updatedAt: now };
-      console.log(`📊 Yahoo ${cfg.name}: ${data.price.toFixed(cfg.decimals)}`);
+      logger.debug(`Yahoo ${cfg.name}: ${data.price.toFixed(cfg.decimals)}`);
     } catch (e) {
-      console.log(`⚠️  Yahoo poll ${key}: ${e.message}`);
+      logger.warn(`Yahoo poll ${key}: ${e.message}`);
     }
   }
 }
@@ -1510,7 +1513,7 @@ async function getAsset(key) {
     const payload    = buildMarketClosedPayload(key);
     const CLOSED_TTL = 5 * 60 * 1000;
     cache[key] = { data: payload, updatedAt: Date.now() - (CACHE_TTL_MS - CLOSED_TTL) };
-    console.log(`🔒 ${cfg.name}: mercado fechado — sem chamada à API`);
+    logger.debug(`${cfg.name}: mercado fechado — sem chamada à API`);
     return payload;
   }
 
@@ -1520,37 +1523,37 @@ async function getAsset(key) {
       const now  = Date.now();
       const data = { ...await fetchFromOanda(key), asset: cfg.name, updatedAt: now, nextUpdateAt: now + OANDA_POLL_MS };
       cache[key] = { data, updatedAt: now };
-      console.log(`✅ ${cfg.name}: ${data.price.toFixed(cfg.decimals)} [OANDA]`);
+      logger.debug(`${cfg.name}: ${data.price.toFixed(cfg.decimals)} [OANDA]`);
       return data;
     } catch (oandaErr) {
-      console.log(`⚠️  OANDA ${key}: ${oandaErr.message} — tentando Twelve Data...`);
+      logger.warn(`OANDA ${key}: ${oandaErr.message} — tentando Twelve Data...`);
     }
   }
 
   // ── Fallback 1: Yahoo Finance (gratuito, sem API key) ─────────────────────
   if (false && YAHOO_SYMBOLS[key]) {
-    console.log(`📥 Buscando ${cfg.name} via Yahoo Finance...`);
+    logger.debug(`Buscando ${cfg.name} via Yahoo Finance`);
     try {
       const now  = Date.now();
       const data = { ...await fetchFromYahoo(key), asset: cfg.name, updatedAt: now, nextUpdateAt: now + CACHE_TTL_MS };
       cache[key] = { data, updatedAt: now };
-      console.log(`✅ ${cfg.name}: ${data.price.toFixed(cfg.decimals)} [Yahoo Finance]`);
+      logger.debug(`${cfg.name}: ${data.price.toFixed(cfg.decimals)} [Yahoo Finance]`);
       return data;
     } catch (yahooErr) {
-      console.log(`⚠️  Yahoo ${key}: ${yahooErr.message} — tentando Twelve Data...`);
+      logger.warn(`Yahoo ${key}: ${yahooErr.message} — tentando Twelve Data...`);
     }
   }
 
   // ── Fallback 2: Twelve Data ───────────────────────────────────────────────
-  console.log(`📥 Buscando ${cfg.name} via Twelve Data...`);
+  logger.debug(`Buscando ${cfg.name} via Twelve Data`);
   try {
     const now  = Date.now();
     const data = { ...await fetchFromTwelveData(cfg.symbol), asset: cfg.name, updatedAt: now, nextUpdateAt: now + CACHE_TTL_MS };
     cache[key] = { data, updatedAt: now };
-    console.log(`✅ ${cfg.name}: ${data.price.toFixed(cfg.decimals)} [Twelve Data]`);
+    logger.debug(`${cfg.name}: ${data.price.toFixed(cfg.decimals)} [Twelve Data]`);
     return data;
   } catch (err) {
-    console.log(`❌ ${cfg.name} erro: ${err.message} — fallback simulação`);
+    logger.error(`${cfg.name} erro: ${err.message} — fallback simulação`);
     const now  = Date.now();
     const data = { ...generateFallback(cfg.fallbackPrice, cfg.vol, cfg.decimals), asset: cfg.name, updatedAt: now, nextUpdateAt: now + CACHE_TTL_MS };
     cache[key] = { data, updatedAt: now };
@@ -1642,7 +1645,7 @@ function attachSignals(data, key) {
       'daily': sDaily,
     };
   } catch (e) {
-    console.log(`⚠️  attachSignals ${key}:`, e.message);
+    logger.warn(`attachSignals ${key}:`, e.message);
   }
   return data;
 }
@@ -1930,7 +1933,7 @@ app.get('/api/vip/signal', rateLimit, vipAuth, async (req, res) => {
     const signal = await computeVipSignal(asset, entryTf, biasTf);
     res.json(signal);
   } catch (err) {
-    console.error('⚠️  VIP signal error:', err.message);
+    logger.error('VIP signal error:', err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -2108,11 +2111,11 @@ app.get('/api/backtest-data', rateLimit, (req, res) => {
     // Refresh async (sem bloquear resposta) se cache estiver velho
     for (const key of Object.keys(assetMap)) {
       if (!isCacheValid(key)) {
-        getAsset(key).catch(e => console.log(`⚠️  Auto-refresh ${key} falhou: ${e.message}`));
+        getAsset(key).catch(e => logger.warn(`Auto-refresh ${key} falhou: ${e.message}`));
       }
     }
   } catch (err) {
-    console.error('Erro ao buscar dados para backtester:', err.message);
+    logger.error('Erro ao buscar dados para backtester:', err.message);
     res.status(500).json({ error: 'Erro ao carregar dados para backtester', detail: err.message });
   }
 });
@@ -2303,11 +2306,11 @@ setInterval(async () => {
         try {
           await computeVipSignal(key, '15m', '1h', { skipPersist: false });
         } catch (vipErr) {
-          console.log(`⚠️  VIP scan ${key}:`, vipErr.message);
+          logger.warn(`VIP scan ${key}:`, vipErr.message);
         }
       }
     } catch (err) {
-      console.log(`⚠️  Erro no ciclo de ${key}:`, err.message);
+      logger.warn(`Erro no ciclo de ${key}:`, err.message);
     }
   }
 }, ALERT_INTERVAL_MS);
@@ -2324,34 +2327,29 @@ if (OANDA_API_KEY) {
 
 // ===== START =====
 app.listen(PORT, async () => {
-  console.log(`\n╔══════════════════════════════════════════╗`);
-  console.log(`║  🚀 Trading Dashboard v${VERSION} — ${Object.keys(ASSETS).length} ativos     ║`);
-  console.log(`║  🔗 http://localhost:${PORT}               ║`);
-  console.log(`║  📊 Ativos: ${Object.values(ASSETS).map(a=>a.name).join(' | ')}   ║`);
-  console.log(`╚══════════════════════════════════════════╝\n`);
+  logger.info(`Trading Dashboard v${VERSION} iniciado | porta ${PORT} | ${Object.keys(ASSETS).length} ativos: ${Object.values(ASSETS).map(a=>a.name).join(', ')}`);
 
   if (TWELVE_DATA_KEY === 'COLE_SUA_CHAVE_AQUI') {
-    console.log('⚠️  TWELVE_DATA_KEY não configurada — usando como fallback apenas\n');
+    logger.warn('TWELVE_DATA_KEY não configurada — usando Twelve Data apenas como fallback');
   }
 
   // ── Binance WebSocket (BTC) ──────────────────────────────────────────────
-  console.log('🔗 Iniciando Binance WebSocket (BTC)...');
+  logger.info('Iniciando Binance WebSocket (BTC)...');
   await loadBtcHistory();   // carrega histórico inicial via REST
   connectBinanceWS();       // conecta stream em tempo real
 
   // ── OANDA (XAU/EUR/JPY) ─────────────────────────────────────────────────
   if (OANDA_API_KEY) {
-    console.log(`⚡ OANDA_API_KEY detectada — XAU/EUR/JPY em tempo real (${OANDA_PRACTICE ? 'prática' : 'real'})`);
+    logger.info(`OANDA configurado — XAU/EUR/JPY em tempo real (${OANDA_PRACTICE ? 'prática' : 'real'})`);
     await pollOanda(); // carrega histórico inicial via REST
   } else {
-    // Sem OANDA: Twelve Data volta a ser a fonte principal para XAU/EUR/JPY.
-    console.log('📥 OANDA não configurado — usando Twelve Data para XAU/EUR/JPY...');
+    logger.warn('OANDA_API_KEY não configurada — usando Twelve Data para XAU/EUR/JPY');
   }
 
   // Carga inicial dos ativos restantes (só se ainda sem dados reais)
   for (const key of Object.keys(ASSETS).filter(k => k !== 'btc')) {
     if (!cache[key].data || cache[key].data.isSimulation) {
-      getAsset(key).catch(e => console.log(`⚠️  ${key}: ${e.message}`));
+      getAsset(key).catch(e => logger.warn(`${key}: carga inicial falhou — ${e.message}`));
     }
   }
 });
