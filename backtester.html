@@ -78,6 +78,40 @@
         .wf-panel.active { display:block; animation:fadeIn .3s; }
         .wf-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px; }
         @media(max-width:700px){ .wf-grid{grid-template-columns:1fr;} }
+
+        /* ── MOBILE ── */
+        @media(max-width:768px){
+          body { font-size: 13px; }
+          .container { padding: 0 8px 30px; }
+          h1 { font-size: 20px !important; }
+
+          /* Controles: empilhar em coluna */
+          .controls { flex-direction: column; gap: 8px; }
+          .controls select, .controls button, .controls input { width: 100%; }
+
+          /* Tabs de estratégia: scroll horizontal */
+          .strat-tabs { overflow-x: auto; flex-wrap: nowrap; padding-bottom: 4px; }
+          .strat-tab   { white-space: nowrap; flex-shrink: 0; }
+
+          /* Summary cards: 2 colunas */
+          .summary-cards { grid-template-columns: 1fr 1fr !important; gap: 8px !important; }
+          .summary-card  { padding: 10px; }
+          .s-value { font-size: 20px !important; }
+
+          /* Trade list: scroll horizontal */
+          .trades-table, .trades-table table { overflow-x: auto; display: block; }
+
+          /* Chart: altura reduzida */
+          #equityChart, canvas { max-height: 220px !important; }
+
+          /* Walk-forward */
+          .wf-grid { grid-template-columns: 1fr; }
+        }
+
+        @media(max-width:480px){
+          .summary-cards { grid-template-columns: 1fr 1fr !important; }
+          .s-value { font-size: 18px !important; }
+        }
         .wf-block { background:#0d1526; border:1px solid #1e3a5f; border-radius:8px; padding:14px; }
         .wf-block.train h4 { color:#00d4ff; font-size:11px; text-transform:uppercase; margin-bottom:10px; letter-spacing:.08em; }
         .wf-block.test  h4 { color:#f59e0b; font-size:11px; text-transform:uppercase; margin-bottom:10px; letter-spacing:.08em; }
@@ -948,10 +982,14 @@ const MASTER_SIGNAL_CFG = {
     adxTrendMin: 25,
     stopAtrMult: 1.5,
     takeAtrMult: 3.0,
-    // Slippage: % do preço de entrada, aplicado na direção desfavorável ao trader.
+    // Slippage base: % do preço de entrada, aplicado na direção desfavorável ao trader.
     // LONG paga slippage acima do open, SHORT paga abaixo do open.
     // 0.015% é realista para ativos líquidos (XAU, BTC, majors forex).
     slippagePct: 0.015,
+    // Spread em notícias: multiplicador aplicado ao slippage durante janelas de news.
+    // Em eventos como NFP, FOMC e CPI o spread real pode triplicar ou mais.
+    // 3x é conservador — em BTC pode chegar a 5-10x nos primeiros segundos.
+    newsSpreadMult: 3.0,
 };
 
 function classifyMasterSignal(score) {
@@ -1064,7 +1102,11 @@ const STRATEGIES = {
                     // Se não houver próxima vela (fim do histórico), ignora o sinal.
                     if (i + 1 >= candles.length) continue;
                     const fillCandle = candles[i + 1];
-                    const slip = fillCandle.open * MASTER_SIGNAL_CFG.slippagePct / 100;
+                    // Spread em news: multiplica slippage se a vela de fill cair em janela de evento
+                    const fillIsNews  = isNewsBlackoutTime(fillCandle.time);
+                    const slipMult    = fillIsNews ? MASTER_SIGNAL_CFG.newsSpreadMult : 1.0;
+                    const effectiveSlipPct = MASTER_SIGNAL_CFG.slippagePct * slipMult;
+                    const slip = fillCandle.open * effectiveSlipPct / 100;
 
                     if (signal.rawScore === 3) {
                         // LONG: paga slippage para cima (mercado corre antes do fill)
@@ -1083,7 +1125,8 @@ const STRATEGIES = {
                             sessionOk: signal.sessionOk,
                             sessionLabel: signal.sessionLabel,
                             newsBlocked: signal.newsBlocked,
-                            slippagePct: MASTER_SIGNAL_CFG.slippagePct,
+                            slippagePct: effectiveSlipPct,
+                            newsSpread: fillIsNews,
                             fillOpen: fillCandle.open,
                         };
                     } else if (signal.rawScore === -3) {
@@ -1103,7 +1146,8 @@ const STRATEGIES = {
                             sessionOk: signal.sessionOk,
                             sessionLabel: signal.sessionLabel,
                             newsBlocked: signal.newsBlocked,
-                            slippagePct: MASTER_SIGNAL_CFG.slippagePct,
+                            slippagePct: effectiveSlipPct,
+                            newsSpread: fillIsNews,
                             fillOpen: fillCandle.open,
                         };
                     }
@@ -1649,7 +1693,7 @@ function runBacktest(asset, stratKey, btn) {
         <div class="summary-card" style="border-color:#00ff4133"><div class="s-label">🟢 Longs / WR</div><div class="s-value s-green">${longs.length} / ${wrL}%</div></div>
         <div class="summary-card" style="border-color:#ff335533"><div class="s-label">🔴 Shorts / WR</div><div class="s-value s-red">${shorts.length} / ${wrS}%</div></div>
         <div class="summary-card" style="border-color:#ffaa0055"><div class="s-label">💸 Custo/Trade</div><div class="s-value s-yellow" style="font-size:16px">−${costRound}%</div><div style="font-size:9px;color:#64748b;margin-top:4px">${costLabel}</div></div>
-        ${auditTrades.length ? `<div class="summary-card" style="border-color:#64748b55"><div class="s-label">🎯 Slippage</div><div class="s-value" style="color:#94a3b8;font-size:16px">0.015%</div><div style="font-size:9px;color:#64748b;margin-top:4px">next-candle open</div></div>` : ''}
+        ${auditTrades.length ? `<div class="summary-card" style="border-color:#64748b55"><div class="s-label">🎯 Slippage</div><div class="s-value" style="color:#94a3b8;font-size:16px">0.015%</div><div style="font-size:9px;color:#64748b;margin-top:4px">next-candle · news ×${MASTER_SIGNAL_CFG.newsSpreadMult}</div></div>` : ''}
         ${auditTrades.length ? `<div class="summary-card" style="border-color:#00d4ff55"><div class="s-label">🔎 ADX Médio Entrada</div><div class="s-value s-blue">${avgEntryAdx}</div><div style="font-size:9px;color:#64748b;margin-top:4px">Master Signal</div></div>` : ''}
         ${auditTrades.length ? `<div class="summary-card" style="border-color:#8b5cf655"><div class="s-label">🧾 Motivos Saída</div><div class="s-value" style="color:#c4b5fd;font-size:14px">${exitReasonLabel}</div><div style="font-size:9px;color:#64748b;margin-top:4px">TP / SL / força</div></div>` : ''}
         ${auditTrades.length ? `<div class="summary-card" style="border-color:#22c55e55"><div class="s-label">🌊 Trend Forte / WR</div><div class="s-value s-green">${strongTrendTrades.length} / ${calcWr(strongTrendTrades)}%</div><div style="font-size:9px;color:#64748b;margin-top:4px">ADX ≥ 40</div></div>` : ''}
@@ -1817,12 +1861,13 @@ function renderTradesTable(asset, candles, trades){
         const entryScore = `${trade.audit.rawScore > 0 ? '+' : ''}${trade.audit.rawScore} / ${trade.audit.finalScore > 0 ? '+' : ''}${trade.audit.finalScore}`;
         const exitScore = `${trade.audit.exitRawScore > 0 ? '+' : ''}${trade.audit.exitRawScore} / ${trade.audit.exitScore > 0 ? '+' : ''}${trade.audit.exitScore}`;
         const sessionColor = trade.audit.sessionOk ? '#00ff41' : '#ffaa00';
-        const newsColor = trade.audit.newsBlocked ? '#ff3355' : '#00d4ff';
+        const newsColor = trade.audit.newsBlocked ? '#ff3355' : trade.audit.newsSpread ? '#f59e0b' : '#00d4ff';
+        const newsSpreadLabel = trade.audit.newsSpread ? ` (spread ×${MASTER_SIGNAL_CFG.newsSpreadMult})` : '';
         return `<td style="font-size:10px;line-height:1.45;min-width:220px">
             <div><span style="color:#00d4ff">Score E:</span> ${entryScore}</div>
             <div><span style="color:#00d4ff">ADX:</span> ${trade.audit.adx.toFixed(1)} | <span style="color:${sessionColor}">${trade.audit.sessionLabel}</span></div>
             <div><span style="color:#00d4ff">Filtros:</span> ${trade.audit.trendSig} / ${trade.audit.rsiTrendSig} / ${trade.audit.bkSig}</div>
-            <div><span style="color:${newsColor}">News:</span> ${trade.audit.newsBlocked ? 'bloqueado' : 'livre'} | <span style="color:#a78bfa">Score X:</span> ${exitScore}</div>
+            <div><span style="color:${newsColor}">News:</span> ${trade.audit.newsBlocked ? 'bloqueado' : trade.audit.newsSpread ? `spread ampliado${newsSpreadLabel}` : 'livre'} | <span style="color:#a78bfa">Score X:</span> ${exitScore}</div>
         </td>`;
     };
 

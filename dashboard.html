@@ -148,7 +148,48 @@
             background: linear-gradient(to left, #1e3a5f, transparent);
         }
 
-        @media(max-width:768px){ .header h1{font-size:20px}; .price-card .value{font-size:18px} }
+        /* ── MOBILE ── */
+        @media(max-width:768px){
+          .header { padding: 10px 12px; }
+          .header h1 { font-size: 18px; }
+          .header-right { gap: 6px; }
+          .container { padding: 0 8px; }
+
+          /* Scanner strip: scroll horizontal */
+          .scanner-strip { overflow-x: auto; flex-wrap: nowrap; padding: 6px 12px; gap: 6px; }
+          .scanner-card  { flex-shrink: 0; }
+
+          /* Semáforo: 2 colunas */
+          #semaforo-panel { grid-template-columns: 1fr 1fr !important; gap: 6px !important; padding: 8px !important; }
+
+          /* Tabs: scroll horizontal */
+          .tabs { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; gap: 4px; }
+          .tab-btn { white-space: nowrap; flex-shrink: 0; padding: 6px 10px; font-size: 11px; }
+
+          /* Cards de preço e sinal */
+          .price-card .value { font-size: 18px; }
+          .signal-banner { padding: 12px; }
+
+          /* Tabelas: scroll horizontal */
+          .table-wrap, table { overflow-x: auto; display: block; width: 100%; }
+          thead, tbody, tr { min-width: max-content; }
+
+          /* Gráficos: altura reduzida */
+          #mainChart, canvas { max-height: 260px !important; }
+
+          /* Live history */
+          .live-history-panel { padding: 10px; }
+          .live-history-item  { padding: 8px 10px; }
+
+          /* Risk calculator */
+          .risk-grid { grid-template-columns: 1fr 1fr !important; }
+        }
+
+        @media(max-width:480px){
+          #semaforo-panel { grid-template-columns: 1fr 1fr !important; }
+          .tab-btn { font-size: 10px; padding: 5px 8px; }
+          .header h1 { font-size: 15px; }
+        }
 
         /* BANNER DE FONTE DE DADOS */
         #data-source-banner {

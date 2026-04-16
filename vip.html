@@ -142,6 +142,27 @@
     @media (max-width: 768px) { .grid-2, .grid-4 { grid-template-columns: 1fr; } }
     @media (max-width: 960px) { .grid-4 { grid-template-columns: 1fr 1fr; } }
 
+    /* ── MOBILE ── */
+    @media (max-width: 768px) {
+      .topbar { padding: 8px 12px; gap: 8px; }
+      .topbar nav a { padding: 5px 8px; font-size: 11px; }
+      .container { padding: 10px 10px; gap: 10px; }
+      .card { padding: 14px 12px; }
+      .status-hero { padding: 14px; gap: 12px; }
+      .tab-btns { flex-wrap: wrap; }
+      .tab-btn { flex: 1; min-width: 100px; text-align: center; }
+      .scanner-strip { overflow-x: auto; flex-wrap: nowrap; }
+      .sizing-grid { grid-template-columns: 1fr 1fr; }
+      .levels-grid  { grid-template-columns: 1fr; }
+      .equity-chart-wrap canvas { max-height: 200px !important; }
+    }
+
+    @media (max-width: 480px) {
+      .topbar .logo span:not(:first-child) { display: none; }
+      .tab-btn { font-size: 11px; padding: 6px 8px; }
+      .sizing-grid { grid-template-columns: 1fr 1fr; }
+    }
+
     .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
     .card-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin-bottom: 14px; }
 
@@ -478,9 +499,12 @@
 
   <!-- HISTÓRICO TABS -->
   <div class="card">
-    <div class="tab-btns">
-      <button class="tab-btn active" id="tabTrades"  onclick="switchTab('trades')">Trades Fechados</button>
-      <button class="tab-btn"        id="tabSignals" onclick="switchTab('signals')">Histórico de Sinais</button>
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:4px">
+      <div class="tab-btns" style="margin-bottom:0">
+        <button class="tab-btn active" id="tabTrades"  onclick="switchTab('trades')">Trades Fechados</button>
+        <button class="tab-btn"        id="tabSignals" onclick="switchTab('signals')">Histórico de Sinais</button>
+      </div>
+      <button onclick="exportTradesCSV()" style="background:rgba(240,180,41,.12);border:1px solid rgba(240,180,41,.3);color:var(--gold);padding:6px 14px;border-radius:6px;font-size:12px;cursor:pointer;white-space:nowrap">📥 Exportar CSV</button>
     </div>
     <div id="tabTradesContent">
       <div class="table-wrap">
@@ -1003,6 +1027,7 @@ async function loadTrades() {
     vipFetch('/api/vip/trades?status=closed&limit=200').then(r => r.json()).catch(() => ({ trades: [] })),
     vipFetch('/api/vip/stats').then(r => r.json()).catch(() => ({ stats: null })),
   ]);
+  window._closedTrades = r2.trades || []; // para export CSV
   renderOpenTrades(r1.trades || []);
   renderClosedTrades(r2.trades || []);
   renderStats(r3.stats, r2.trades || []);
@@ -1050,6 +1075,38 @@ function renderClosedTrades(trades) {
       <td>${fmtDate(t.closedAt)}</td>
     </tr>`;
   }).join('');
+}
+
+// ── EXPORT CSV ──
+function exportTradesCSV() {
+  const rows = [
+    ['ID','Ativo','Direção','Entry','Close','PnL%','PnL_R','Outcome','RR','Sessão','Score','Aberto em','Fechado em']
+  ];
+  (window._closedTrades || []).forEach(t => {
+    rows.push([
+      t.id || '',
+      (t.asset || '').toUpperCase(),
+      t.direction || '',
+      t.entry != null ? t.entry : '',
+      t.closePrice != null ? t.closePrice : '',
+      t.pnlPct != null ? t.pnlPct : '',
+      t.pnlR != null ? t.pnlR : '',
+      t.outcome || '',
+      t.rr != null ? t.rr : '',
+      t.session || '',
+      t.score != null ? t.score : '',
+      t.openedAt ? new Date(t.openedAt).toISOString() : '',
+      t.closedAt ? new Date(t.closedAt).toISOString() : '',
+    ]);
+  });
+  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url;
+  a.download = `trades_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 // ── MÉTRICAS + EQUITY ──
