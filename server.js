@@ -2022,6 +2022,15 @@ app.get('/api/vip/stats', rateLimit, vipAuth, (req, res) => {
   res.json({ success: true, stats });
 });
 
+// PATCH /api/vip/trades/:id — atualiza notes/tags de um trade
+app.patch('/api/vip/trades/:id', rateLimit, vipAuth, (req, res) => {
+  const { id } = req.params;
+  if (!id || typeof id !== 'string') return res.status(400).json({ success: false, error: 'ID inválido' });
+  const updated = tradeStore.updateTrade(id, req.body || {});
+  if (!updated) return res.status(404).json({ success: false, error: 'Trade não encontrado' });
+  res.json({ success: true, trade: updated });
+});
+
 /**
  * GET /api/vip/scan?entryTf=15m&biasTf=4h
  * Escaneia todos os ativos de uma vez e retorna resumo de cada um

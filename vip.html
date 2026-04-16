@@ -155,6 +155,8 @@
       .sizing-grid { grid-template-columns: 1fr 1fr; }
       .levels-grid  { grid-template-columns: 1fr; }
       .equity-chart-wrap canvas { max-height: 200px !important; }
+      #tabJournalContent > div:nth-child(2) { grid-template-columns: 1fr !important; }
+      #journalStreaks > div { grid-template-columns: 1fr 1fr !important; }
     }
 
     @media (max-width: 480px) {
@@ -502,6 +504,7 @@
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:4px">
       <div class="tab-btns" style="margin-bottom:0">
         <button class="tab-btn active" id="tabTrades"  onclick="switchTab('trades')">Trades Fechados</button>
+        <button class="tab-btn"        id="tabJournal" onclick="switchTab('journal')">📓 Journal</button>
         <button class="tab-btn"        id="tabSignals" onclick="switchTab('signals')">Histórico de Sinais</button>
       </div>
       <button onclick="exportTradesCSV()" style="background:rgba(240,180,41,.12);border:1px solid rgba(240,180,41,.3);color:var(--gold);padding:6px 14px;border-radius:6px;font-size:12px;cursor:pointer;white-space:nowrap">📥 Exportar CSV</button>
@@ -539,6 +542,15 @@
           <tbody id="signalHistory"><tr><td colspan="9"><div class="empty-state"><div class="emoji">📡</div>Nenhum sinal registrado</div></td></tr></tbody>
         </table>
       </div>
+    </div>
+    <!-- JOURNAL TAB -->
+    <div id="tabJournalContent" style="display:none">
+      <div id="journalStreaks" style="margin-bottom:16px"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+        <div id="journalMonthly"></div>
+        <div id="journalDistrib"></div>
+      </div>
+      <div id="journalNotesTrades"></div>
     </div>
   </div>
 
@@ -1317,12 +1329,158 @@ async function submitClose(outcome) {
 document.getElementById('closeModal').addEventListener('click', function(e) { if (e.target===this) closeModal(); });
 
 // ── TABS ──
+// ── JOURNAL ──────────────────────────────────────────────────────────────────
+function renderJournal(trades) {
+  const empty = (el) => { document.getElementById(el).innerHTML = ''; };
+  if (!trades || trades.length === 0) {
+    document.getElementById('journalStreaks').innerHTML =
+      '<div class="empty-state" style="padding:30px"><div class="emoji">📓</div>Sem trades fechados para analisar</div>';
+    ['journalMonthly','journalDistrib','journalNotesTrades'].forEach(empty);
+    return;
+  }
+
+  const sorted = [...trades].sort((a,b) => (a.closedAt||0) - (b.closedAt||0));
+
+  // ── Streaks ──
+  let curWin=0,curLoss=0,maxWin=0,maxLoss=0;
+  let lastIsWin=null;
+  for (const t of sorted) {
+    const w = (t.pnlR||0) > 0;
+    if (w) { curWin++; curLoss=0; if (curWin>maxWin) maxWin=curWin; }
+    else   { curLoss++; curWin=0; if (curLoss>maxLoss) maxLoss=curLoss; }
+    lastIsWin = w;
+  }
+  const streakTxt   = lastIsWin ? `+${curWin} WIN 🟢` : `-${curLoss} LOSS 🔴`;
+  const streakColor = lastIsWin ? 'var(--green)' : 'var(--red)';
+
+  // ── Monthly map ──
+  const mmap = {};
+  for (const t of sorted) {
+    const d = new Date(t.closedAt||t.openedAt||0);
+    const k = `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}`;
+    if (!mmap[k]) mmap[k] = { n:0, w:0, r:0 };
+    mmap[k].n++;
+    if ((t.pnlR||0)>0) mmap[k].w++;
+    mmap[k].r += (t.pnlR||0);
+  }
+  const months = Object.entries(mmap).sort((a,b) => b[0].localeCompare(a[0]));
+  let bestMth='—', bestR=-Infinity;
+  months.forEach(([k,v]) => { if (v.r > bestR) { bestR=v.r; bestMth=k; } });
+
+  // ── Streak cards ──
+  document.getElementById('journalStreaks').innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+      <div class="card metric-card"><div class="metric-val" style="color:${streakColor};font-size:16px">${streakTxt}</div><div class="metric-label">Sequência Atual</div></div>
+      <div class="card metric-card"><div class="metric-val" style="color:var(--green)">+${maxWin}</div><div class="metric-label">Max WIN Streak</div></div>
+      <div class="card metric-card"><div class="metric-val" style="color:var(--red)">-${maxLoss}</div><div class="metric-label">Max LOSS Streak</div></div>
+      <div class="card metric-card"><div class="metric-val" style="color:var(--gold);font-size:16px">${bestMth}</div><div class="metric-label">Melhor Mês${bestMth!=='—'?` (+${bestR.toFixed(1)}R)`:''}</div></div>
+    </div>`;
+
+  // ── Monthly table ──
+  const mRows = months.map(([k,v]) => {
+    const wr  = Math.round((v.w/v.n)*100);
+    const tR  = parseFloat(v.r.toFixed(2));
+    const aR  = parseFloat((v.r/v.n).toFixed(2));
+    const wc  = wr>=50 ? 'var(--green)' : 'var(--red)';
+    const rc  = tR>=0  ? 'var(--green)' : 'var(--red)';
+    const bar = `<div style="display:inline-block;width:${wr}%;max-width:50px;height:3px;background:${wc};margin-left:5px;vertical-align:middle;border-radius:2px"></div>`;
+    return `<tr>
+      <td>${k}</td><td>${v.n}</td><td>${v.w}W/${v.n-v.w}L</td>
+      <td style="color:${wc}">${wr}%${bar}</td>
+      <td style="color:${rc}">${tR>=0?'+':''}${tR}R</td>
+      <td style="color:${rc}">${aR>=0?'+':''}${aR}R</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('journalMonthly').innerHTML = `
+    <div class="card-title" style="margin-bottom:10px">📅 Breakdown Mensal</div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Mês</th><th>N</th><th>W/L</th><th>WR</th><th>Total R</th><th>Avg R</th></tr></thead>
+      <tbody>${mRows||'<tr><td colspan="6" style="color:var(--muted);padding:10px">—</td></tr>'}</tbody>
+    </table></div>`;
+
+  // ── R Distribution ──
+  const bkts = [
+    ['≤-2R',-Infinity,-2,'#ff335599'],['−2R',-2,-1.5,'#ff335577'],
+    ['−1.5R',-1.5,-1,'#ff335555'],['−1R',-1,-0.5,'#ff335533'],
+    ['0R',-0.5,0.5,'#64748b55'],
+    ['+1R',0.5,1.5,'#00ff4133'],['+1.5R',1.5,2,'#00ff4155'],
+    ['+2R',2,2.5,'#00ff4177'],['≥+2.5R',2.5,Infinity,'#00ff4199'],
+  ];
+  const cnts = bkts.map(([lbl,mn,mx,col]) => ({
+    lbl, col,
+    c: trades.filter(t=>(t.pnlR||0)>mn&&(t.pnlR||0)<=mx).length,
+  }));
+  const maxC = Math.max(...cnts.map(b=>b.c),1);
+  const bars = cnts.map(b => {
+    const h = Math.round((b.c/maxC)*80);
+    return `<div style="display:flex;flex-direction:column;align-items:center;flex:1;gap:3px">
+      <div style="font-size:10px;color:var(--muted);min-height:14px">${b.c||''}</div>
+      <div style="height:80px;display:flex;align-items:flex-end;width:100%">
+        <div style="width:100%;height:${h}px;background:${b.col};border-radius:3px 3px 0 0;min-height:${b.c?2:0}px"></div>
+      </div>
+      <div style="font-size:9px;color:var(--muted);text-align:center;line-height:1.2">${b.lbl}</div>
+    </div>`;
+  }).join('');
+  document.getElementById('journalDistrib').innerHTML = `
+    <div class="card-title" style="margin-bottom:10px">📊 Distribuição R</div>
+    <div style="display:flex;gap:3px;padding:6px 0">${bars}</div>`;
+
+  // ── Notes table ──
+  const noteRows = [...sorted].reverse().map(t => {
+    const pnlCls = (t.pnlR||0)>=0 ? 'pnl-pos' : 'pnl-neg';
+    const dt = t.closedAt ? new Date(t.closedAt).toLocaleDateString('pt-BR') : '—';
+    return `<tr>
+      <td>${(t.asset||'').toUpperCase()}</td>
+      <td style="color:${t.direction==='BUY'?'var(--green)':'var(--red)'}">${t.direction==='BUY'?'🟢 BUY':'🔴 SELL'}</td>
+      <td>${fmtNum(t.entry)}</td>
+      <td class="${pnlCls}">${(t.pnlR||0)>=0?'+':''}${fmtNum(t.pnlR)}R</td>
+      <td>${dt}</td>
+      <td style="min-width:200px">
+        <textarea data-tid="${sanitize(t.id)}" rows="1" placeholder="Adicionar nota…"
+          onblur="saveNote(this)" onfocus="this.style.borderColor='var(--gold)'"
+          style="width:100%;background:transparent;border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 6px;font-size:11px;resize:none;outline:none;font-family:inherit;transition:border-color .15s"
+        >${sanitize(t.notes||'')}</textarea>
+      </td>
+    </tr>`;
+  }).join('');
+  document.getElementById('journalNotesTrades').innerHTML = `
+    <div class="card-title" style="margin-bottom:10px">📝 Notas por Trade</div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Ativo</th><th>Dir</th><th>Entry</th><th>PnL (R)</th><th>Fechado em</th><th>Notas</th></tr></thead>
+      <tbody>${noteRows||'<tr><td colspan="6" style="color:var(--muted);padding:10px">Nenhum trade fechado</td></tr>'}</tbody>
+    </table></div>`;
+}
+
+async function saveNote(el) {
+  el.style.borderColor = 'var(--border)';
+  const id = el.dataset.tid;
+  if (!id) return;
+  try {
+    const r = await vipFetch(`/api/vip/trades/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notes: el.value }),
+    });
+    if (r.ok) {
+      const updated = await r.json();
+      // sync back into _closedTrades cache
+      const idx = (window._closedTrades||[]).findIndex(t=>t.id===id);
+      if (idx >= 0 && updated.trade) window._closedTrades[idx].notes = updated.trade.notes;
+      el.style.borderColor = '#00ff4155'; // brief green flash
+      setTimeout(() => { el.style.borderColor = 'var(--border)'; }, 800);
+    }
+  } catch(e) { console.warn('saveNote error:', e); }
+}
+
 function switchTab(tab) {
-  document.getElementById('tabTrades').classList.toggle('active', tab==='trades');
+  document.getElementById('tabTrades').classList.toggle('active',  tab==='trades');
+  document.getElementById('tabJournal').classList.toggle('active', tab==='journal');
   document.getElementById('tabSignals').classList.toggle('active', tab==='signals');
-  document.getElementById('tabTradesContent').style.display  = tab==='trades'  ? '' : 'none';
-  document.getElementById('tabSignalsContent').style.display = tab==='signals' ? '' : 'none';
+  document.getElementById('tabTradesContent').style.display   = tab==='trades'  ? '' : 'none';
+  document.getElementById('tabJournalContent').style.display  = tab==='journal' ? '' : 'none';
+  document.getElementById('tabSignalsContent').style.display  = tab==='signals' ? '' : 'none';
   if (tab === 'signals') loadSignalHistory();
+  if (tab === 'journal') renderJournal(window._closedTrades || []);
 }
 
 // ── INIT ──

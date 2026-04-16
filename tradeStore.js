@@ -719,6 +719,19 @@ function listTrades({ asset, status, limit = 100 } = {}) {
   return rows.map(r => JSON.parse(r.data));
 }
 
+// Atualiza campos opcionais de um trade (notes, tags) sem alterar status/pnl
+function updateTrade(id, fields) {
+  const ALLOWED = ['notes', 'tags'];
+  const row = db.prepare('SELECT data, status FROM trades WHERE id = ?').get(id);
+  if (!row) return null;
+  const trade = JSON.parse(row.data);
+  for (const k of ALLOWED) {
+    if (fields[k] !== undefined) trade[k] = String(fields[k]).slice(0, 2000); // max 2k chars
+  }
+  _stmtTradeUpdate.run(row.status, JSON.stringify(trade), id);
+  return trade;
+}
+
 function getStats({ asset } = {}) {
   const rows = asset
     ? db.prepare("SELECT data FROM trades WHERE status='closed' AND asset=?").all(asset)
@@ -772,6 +785,7 @@ function getStats({ asset } = {}) {
 module.exports = {
   openTrade,
   closeTrade,
+  updateTrade,
   listTrades,
   getStats,
   appendSignal,
