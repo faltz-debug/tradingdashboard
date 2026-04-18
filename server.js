@@ -2291,14 +2291,14 @@ app.get('/api/risk-state', rateLimit, (req, res) => {
 // ===== AUTO-CLOSE VIP TRADES (SL/TP) =====
 /**
  * Verifica se algum trade VIP aberto para este ativo teve seu SL ou TP atingido
- * na última vela 15m. Fecha automaticamente e notifica via Telegram.
+ * na ultima vela 15m. Fecha automaticamente e notifica via Telegram.
  *
- * Lógica de detecção via candle high/low (mais precisa que só close):
- *   BUY:  TP hit  → candle.high  >= tp  | SL hit → candle.low  <= sl
- *   SELL: TP hit  → candle.low   <= tp  | SL hit → candle.high >= sl
+ * Logica de deteccao via candle high/low (mais precisa que so close):
+ *   BUY:  TP hit  -> candle.high >= tp  | SL hit -> candle.low  <= sl
+ *   SELL: TP hit  -> candle.low  <= tp  | SL hit -> candle.high >= sl
  *
  * TP tem prioridade sobre SL (se ambos tocados na mesma vela, assume TP).
- * Trades sem TP (trailing stop) só verificam SL.
+ * Trades sem TP (trailing stop) so verificam SL.
  */
 async function checkOpenTradesForExit(asset, data) {
   if (data.isSimulation || data.isMarketClosed) return;
@@ -2306,7 +2306,7 @@ async function checkOpenTradesForExit(asset, data) {
   const candles = data['15m'];
   if (!candles || candles.length < 2) return;
 
-  // Usa a vela anterior à última (a última pode ainda estar formando)
+  // Usa a vela anterior a ultima (a ultima pode ainda estar formando)
   const candle = candles[candles.length - 2];
   if (!candle) return;
 
@@ -2318,16 +2318,16 @@ async function checkOpenTradesForExit(asset, data) {
 
   for (const trade of openTrades) {
     const { id, direction, entry, sl, tp, openedAt } = trade;
-    if (!sl || isNaN(sl)) continue; // sem SL definido — pular
+    if (!sl || isNaN(sl)) continue; // sem SL definido - pular
 
-    // Só avalia candles totalmente posteriores à abertura do trade.
-    // Se o trade abriu no meio da vela, o high/low dessa vela é ambíguo.
+    // So avalia candles totalmente posteriores a abertura do trade.
+    // Se o trade abriu no meio da vela, o high/low dessa vela e ambiguo.
     if (!openedAt || candleOpenAtMs <= openedAt || candleCloseAtMs <= openedAt) continue;
 
     const isBuy  = direction === 'BUY';
     const hasTP  = tp != null && !isNaN(tp);
 
-    // Detecta qual nível foi tocado
+    // Detecta qual nivel foi tocado
     let outcome   = null;
     let closePrice = null;
 
@@ -2356,19 +2356,19 @@ async function checkOpenTradesForExit(asset, data) {
     const closed = tradeStore.closeTrade(id, { closePrice, outcome });
     if (!closed) continue;
 
-    logger.info(`Auto-close ${asset.toUpperCase()} ${direction} → ${outcome} @ ${closePrice} | ${closed.pnlR}R`);
+    logger.info(`Auto-close ${asset.toUpperCase()} ${direction} -> ${outcome} @ ${closePrice} | ${closed.pnlR}R`);
 
-    // Telegram — mesmo formato do fechamento manual
+    // Telegram - mesmo formato do fechamento manual
     const pnlPos       = (closed.pnlR || 0) >= 0;
-    const outcomeEmoji = outcome === 'TP' ? '✅' : '❌';
-    const pnlEmoji     = pnlPos ? '💰' : '📉';
+    const outcomeEmoji = outcome === 'TP' ? '\u2705' : '\u274C';
+    const pnlEmoji     = pnlPos ? '\uD83D\uDCB0' : '\uD83D\uDCC9';
     const autoMsg = [
-      `⭐ <b>VIP — AUTO-FECHADO</b> ${outcomeEmoji}`,
+      `\u2B50 <b>VIP - AUTO-FECHADO</b> ${outcomeEmoji}`,
       ``,
-      `<b>${asset.toUpperCase()}</b>  ${direction}  →  ${outcome} <i>(automático)</i>`,
+      `<b>${asset.toUpperCase()}</b>  ${direction}  ->  ${outcome} <i>(automatico)</i>`,
       `Entry: ${entry}  |  Close: <b>${closePrice}</b>`,
       `Resultado: ${pnlEmoji} <b>${pnlPos ? '+' : ''}${closed.pnlR}R</b>  (${pnlPos ? '+' : ''}${closed.pnlPct}%)`,
-      closed.session ? `Sessão: ${closed.session}` : '',
+      closed.session ? `Sessao: ${closed.session}` : '',
     ].filter(Boolean).join('\n');
 
     sendTelegram(autoMsg).catch(() => {});
@@ -2430,4 +2430,16 @@ app.listen(PORT, async () => {
 
   // ── OANDA (XAU/EUR/JPY) ─────────────────────────────────────────────────
   if (OANDA_API_KEY) {
-    logger.info(`OANDA configurado — XAU/EUR/JPY em tempo real (${OANDA_PRACTICE ? 'prática' : 'r
+    logger.info(`OANDA configurado — XAU/EUR/JPY em tempo real (${OANDA_PRACTICE ? 'prática' : 'real'})`);
+    await pollOanda(); // carrega histórico inicial via REST
+  } else {
+    logger.warn('OANDA_API_KEY não configurada — usando Twelve Data para XAU/EUR/JPY');
+  }
+
+  // Carga inicial dos ativos restantes (só se ainda sem dados reais)
+  for (const key of Object.keys(ASSETS).filter(k => k !== 'btc')) {
+    if (!cache[key].data || cache[key].data.isSimulation) {
+      getAsset(key).catch(e => logger.warn(`${key}: carga inicial falhou — ${e.message}`));
+    }
+  }
+});
