@@ -1786,6 +1786,101 @@ function hasBreakout(candles, direction, bars = 20) {
 }
 
 /**
+ * FILTRO BÔNUS 1 — Inside Bar (Compressão)
+ * Detecta padrão de 3 velas: mãe → inside bar → confirmação de rompimento
+ *   candles[-3] = vela mãe (maior range)
+ *   candles[-2] = inside bar (contida dentro da mãe)
+ *   candles[-1] = confirmação (fecha acima da máxima da mãe em BUY, abaixo da mínima em SELL)
+ *
+ * Por que funciona: inside bar = compressão de volatilidade. O mercado "respira" antes de
+ * uma decisão direcional. Quando o preço rompe a mãe com confirmação de fechamento,
+ * o movimento tende a ser mais limpo que um breakout simples de 30 períodos.
+ */
+function hasInsideBar(candles, direction) {
+  if (candles.length < 3) return false;
+  const mother  = candles[candles.length - 3];
+  const inside  = candles[candles.length - 2];
+  const confirm = candles[candles.length - 1];
+
+  // inside bar deve estar totalmente contida dentro da vela mãe
+  const isInsideBar = inside.high <= mother.high && inside.low >= mother.low;
+  if (!isInsideBar) return false;
+
+  // confirmação deve fechar além do range da mãe na direção correta
+  if (direction === 'BUY')  return confirm.close > mother.high;
+  if (direction === 'SELL') return confirm.close < mother.low;
+  return false;
+}
+
+/**
+ * FILTRO BÔNUS 2 — Confirmação de Volume
+ * Verifica se o volume da vela atual está acima da média dos últimos 20 períodos.
+ * Retorna null se não houver dados de volume disponíveis (sem penalidade).
+ *
+ * Por que importa: breakout com volume alto = mercado participando da direção.
+ * Breakout com volume fraco = maior probabilidade de false breakout.
+ * Para forex spot o volume é tick volume (proxy), mas ainda tem valor relativo.
+ */
+function hasVolumeConfirmation(candles, multiplier = 1.1) {
+  if (candles.length < 21) return null;
+  const current = candles[candles.length - 1];
+  if (!current.volume || current.volume === 0) return null;  // sem dados → sem penalidade
+  const lookback = candles.slice(-21, -1);
+  const avgVol = lookback.reduce((sum, c) => sum + (c.volume || 0), 0) / lookback.length;
+  if (avgVol === 0) return null;
+  return current.volume >= avgVol * multiplier;
+}
+
+/**
+ * FILTRO BÔNUS 3 — Bollinger Band Squeeze
+ * Detecta compressão das Bollinger Bands: largura atual abaixo de 85% da média
+ * dos últimos 20 cálculos. Indica mercado em consolidação antes de expansão.
+ *
+ * Por que funciona: squeeze + breakout = setup de maior qualidade.
+ * O mercado "carrega energia" durante a compressão e libera no rompimento.
+ * Especialmente relevante para EUR/USD (alta liquidez + padrões técnicos limpos).
+ */
+function hasBollingerSqueeze(closes, period = 20, lookbackWindows = 20) {
+  if (closes.length < period + lookbackWindows) return false;
+
+  const widths = [];
+  // Calcula largura normalizada da BB para as últimas lookbackWindows+1 janelas
+  for (let i = 0; i <= lookbackWindows; i++) {
+    const end   = closes.length - i;
+    const start = end - period;
+    if (start < 0) break;
+    const slice = closes.slice(start, end);
+    const sma   = slice.reduce((a, b) => a + b, 0) / period;
+    if (sma === 0) { widths.push(0); continue; }
+    const variance = slice.reduce((a, b) => a + Math.pow(b - sma, 2), 0) / period;
+    const std = Math.sqrt(variance);
+    widths.push((4 * std) / sma);  // largura normalizada como % do preço
+  }
+
+  if (widths.length < 2) return false;
+  const currentWidth = widths[0];  // i=0 → janela mais recente
+  const avgWidth = widths.slice(1).reduce((a, b) => a + b, 0) / (widths.length - 1);
+
+  // Squeeze: largura atual pelo menos 15% abaixo da média recente
+  return currentWidth > 0 && avgWidth > 0 && currentWidth < avgWidth * 0.85;
+}
+
+/**
+ * CONTEXTO MACRO — EMA 200 (XAU/USD)
+ * Calcula EMA 200 e verifica se o preço está do lado correto para a direção.
+ * Retorna null se dados insuficientes.
+ * Não pontua no score — aparece como contexto operacional (aviso ou confirmação).
+ */
+function getEma200Context(candles, direction) {
+  if (!candles || candles.length < 200) return null;
+  const closes = candles.map(c => c.close);
+  const ema200 = calcEMA(closes, 200);
+  const price  = closes[closes.length - 1];
+  const aligned = direction === 'BUY' ? price > ema200 : price < ema200;
+  return { ema200: parseFloat(ema200.toFixed(2)), aligned };
+}
+
+/**
  * Determina o viés direcional (BUY/SELL/NEUTRAL) baseado nas EMAs 9/20/50
  */
 function getBiasTf(candles) {
@@ -1883,12 +1978,39 @@ async function computeVipSignal(assetKey, entryTf = '15m', biasTf = '1h', { skip
   const newsInfo = getNewsStatus(assetKey);
   const newsBlocked = newsInfo.isNearNews;
 
-  // Score: ema(2) + breakout(2) + adx(2) + session(1) = máx 7
+  // ── FILTROS BÔNUS ─────────────────────────────────────────────────────────
+  // Cada bônus vale +1 ponto (aditivos ao score base de 7)
+  // Permite atingir VALID_SIGNAL (≥7) mesmo sem um filtro base, se bônus compensam
+
+  // BÔNUS 1: Inside Bar — compressão antes do rompimento
+  const filterInsideBar = hasInsideBar(entryCandles, direction);
+
+  // BÔNUS 2: Volume de confirmação — vela atual acima da média 20 períodos
+  // null = sem dados de volume → neutro (não penaliza nem pontua)
+  const volumeConfirmed = hasVolumeConfirmation(entryCandles);
+  const filterVolume = volumeConfirmed === true;  // só pontua se confirmado explicitamente
+
+  // BÔNUS 3: Bollinger Band Squeeze — compressão das bandas antes do breakout
+  const entryCloses = closes;  // já calculado acima
+  const filterBBSqueeze = hasBollingerSqueeze(entryCloses);
+
+  // CONTEXTO MACRO: EMA 200 para XAU/USD (sem pontuação — só contexto/aviso)
+  const ema200Ctx = assetKey === 'xauusd' ? getEma200Context(entryCandles, direction) : null;
+
+  // Score: ema(2) + breakout(2) + adx(2) + session(1) = base 7
+  // Bônus: insideBar(+1) + volume(+1) + bbSqueeze(+1) = até +3 → máx 10
   let score = 0;
-  if (filterEma)      score += 2;
-  if (filterBreakout) score += 2;
-  if (filterAdx)      score += 2;
-  if (filterSession)  score += 1;
+  if (filterEma)       score += 2;
+  if (filterBreakout)  score += 2;
+  if (filterAdx)       score += 2;
+  if (filterSession)   score += 1;
+  if (filterInsideBar) score += 1;
+  if (filterVolume)    score += 1;
+  if (filterBBSqueeze) score += 1;
+
+  // Penalidade de volume: se breakout sem volume (dados disponíveis mas fraco)
+  // → subtrai 1 ponto (breakout menos confiável)
+  if (filterBreakout && volumeConfirmed === false) score -= 1;
 
   // Níveis operacionais (ATR-based, RR 1:2 fixo)
   const atr = calcATR(entryCandles) || (price * 0.001);
@@ -1910,6 +2032,10 @@ async function computeVipSignal(assetKey, entryTf = '15m', biasTf = '1h', { skip
     }
   });
 
+  // Cálculo de bônus para exibição
+  const bonusCount = (filterInsideBar ? 1 : 0) + (filterVolume ? 1 : 0) + (filterBBSqueeze ? 1 : 0);
+  const maxScore   = 10;  // 7 base + 3 bônus
+
   let status, reason;
   if (newsBlocked) {
     status = 'NEWS_BLOCKED';
@@ -1918,14 +2044,15 @@ async function computeVipSignal(assetKey, entryTf = '15m', biasTf = '1h', { skip
     status = 'CONTEXT_BLOCKED';
     reason = `Bloqueado por contexto: ${vipOperationalContext.detail}`;
   } else if (score >= 7) {
+    const bonusNote = bonusCount > 0 ? ` + ${bonusCount} bônus ativo(s)` : '';
     status = 'VALID_SIGNAL';
-    reason = `Todos os filtros passaram. ${direction === 'BUY' ? '📈 Compra' : '📉 Venda'} confirmada.`;
+    reason = `Setup completo confirmado${bonusNote}. ${direction === 'BUY' ? '📈 Compra' : '📉 Venda'} com alta convicção.`;
   } else if (score >= 4) {
     status = 'PARTIAL_SIGNAL';
-    reason = `Filtros parciais (${score}/7). Aguardar confirmação adicional.`;
+    reason = `Filtros parciais (${score}/${maxScore}). Aguardar confirmação adicional.`;
   } else {
     status = 'NO_SIGNAL';
-    reason = `Condições insuficientes (${score}/7). Sem setup VIP no momento.`;
+    reason = `Condições insuficientes (${score}/${maxScore}). Sem setup VIP no momento.`;
   }
 
   const result = {
@@ -1935,14 +2062,21 @@ async function computeVipSignal(assetKey, entryTf = '15m', biasTf = '1h', { skip
     entryTf,
     direction,
     score,
+    maxScore,
     status,
     filters: {
+      // Filtros base
       emaAligned:  filterEma,
       breakout20:  filterBreakout,
       adxOk:       filterAdx,
       sessionOk:   filterSession,
       newsBlocked: newsBlocked,
       contextBlocked: AUTO_BLOCK_WEAK_CONTEXT && vipOperationalContext?.status === 'EVITAR',
+      // Filtros bônus
+      insideBar:   filterInsideBar,
+      volumeOk:    filterVolume,
+      volumeData:  volumeConfirmed,  // null = sem dados, true/false = confirmado/fraco
+      bbSqueeze:   filterBBSqueeze,
     },
     levels: {
       entry:   parseFloat(entry.toFixed(cfg.decimals)),
@@ -1959,6 +2093,12 @@ async function computeVipSignal(assetKey, entryTf = '15m', biasTf = '1h', { skip
       reason,
       price:   parseFloat(entry.toFixed(cfg.decimals)),
       newsInfo: newsBlocked ? { name: newsInfo.nearName, timeStr: newsInfo.nearTimeStr } : null,
+      // Contexto macro XAU
+      ema200: ema200Ctx ? {
+        value:   ema200Ctx.ema200,
+        aligned: ema200Ctx.aligned,
+        warning: !ema200Ctx.aligned ? `⚠️ Preço ${direction === 'BUY' ? 'abaixo' : 'acima'} da EMA200 — entrada contra tendência macro` : null,
+      } : null,
     },
     operationalContext: vipOperationalContext,
     generatedAt: Date.now(),
@@ -2011,13 +2151,23 @@ async function computeVipSignal(assetKey, entryTf = '15m', biasTf = '1h', { skip
   if (!skipPersist && vipCooldownOk && (status === 'VALID_SIGNAL' || status === 'PARTIAL_SIGNAL')) {
     const dirEmoji = direction === 'BUY' ? '📈' : '📉';
     const statusLabel = status === 'VALID_SIGNAL' ? '✅ SINAL VÁLIDO' : '⚡ SINAL PARCIAL';
-    const scoreBar = '🟡'.repeat(result.score) + '⚫'.repeat(7 - result.score);
+    const scoreBar = '🟡'.repeat(Math.min(result.score, result.maxScore)) + '⚫'.repeat(Math.max(0, result.maxScore - result.score));
     const f = result.filters;
     const L = result.levels;
+    const m = result.meta;
+
+    // Linhas de bônus (só exibe se ativo)
+    const bonusLines = [];
+    if (f.insideBar)  bonusLines.push(`⭐ Inside Bar confirmada`);
+    if (f.volumeOk)   bonusLines.push(`⭐ Volume acima da média`);
+    if (f.bbSqueeze)  bonusLines.push(`⭐ BB Squeeze detectado`);
+    if (f.volumeData === false && f.breakout20) bonusLines.push(`⚠️ Breakout com volume fraco`);
+    if (m.ema200 && !m.ema200.aligned) bonusLines.push(m.ema200.warning);
+
     const vipMsg = [
       `⭐ <b>ÁREA VIP — ${statusLabel}</b>`,
       ``,
-      `<b>${cfg.name}</b> ${dirEmoji} <b>${direction}</b>  |  Score: ${result.score}/7`,
+      `<b>${cfg.name}</b> ${dirEmoji} <b>${direction}</b>  |  Score: ${result.score}/${result.maxScore}`,
       `${scoreBar}`,
       ``,
       `🎯 <b>Níveis</b>`,
@@ -2026,12 +2176,13 @@ async function computeVipSignal(assetKey, entryTf = '15m', biasTf = '1h', { skip
       `Alvo:  <b>${L.tp}</b>  (+3.0×ATR)`,
       `ATR: ${L.atr}  |  R:R 1:2`,
       ``,
-      `📋 <b>Filtros</b>`,
+      `📋 <b>Filtros Base</b>`,
       `${f.emaAligned  ? '✅' : '❌'} EMAs alinhadas (${entryTf})`,
-      `${f.breakout20  ? '✅' : '❌'} Breakout 20 barras`,
-      `${f.adxOk       ? '✅' : '❌'} ADX ${result.meta.adx} (≥25)`,
-      `${f.sessionOk   ? '✅' : '❌'} Sessão: ${result.meta.session}`,
+      `${f.breakout20  ? '✅' : '❌'} Breakout ${MASTER_SIGNAL_CFG.breakoutLookback} barras`,
+      `${f.adxOk       ? '✅' : '❌'} ADX ${m.adx} (≥25)`,
+      `${f.sessionOk   ? '✅' : '❌'} Sessão: ${m.session}`,
       `${!f.newsBlocked ? '✅' : '⚠️'} Notícias: ${f.newsBlocked ? 'BLOQUEADO' : 'Livre'}`,
+      ...(bonusLines.length > 0 ? [``, `🚀 <b>Filtros Bônus</b>`, ...bonusLines] : []),
       ``,
       `🧭 <b>Contexto Operacional</b>`,
       `${result.operationalContext.status} — ${result.operationalContext.summary}`,
