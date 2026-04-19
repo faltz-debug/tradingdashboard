@@ -2298,6 +2298,92 @@ function _buildDxyResult(closes, direction) {
 }
 
 /**
+ * Fear & Greed Index — Alternative.me (API gratuita, sem chave)
+ *
+ * Escala 0–100:
+ *   0–24   Extreme Fear  → mercado sobrevendido → bônus BUY para BTC
+ *  25–44   Fear          → contexto levemente bearish
+ *  45–55   Neutral       → sem bônus
+ *  56–74   Greed         → contexto levemente bullish
+ *  75–100  Extreme Greed → mercado sobrecomprado → bônus SELL para BTC
+ *
+ * Cache de 15 min para evitar rate limit.
+ */
+const _fngCache = { value: null, classification: null, updatedAt: 0 };
+const FNG_CACHE_TTL = 15 * 60 * 1000;  // 15 minutos
+
+async function fetchFearGreedIndex(direction) {
+  try {
+    const now = Date.now();
+
+    // Retorna do cache se ainda fresco
+    if (_fngCache.value !== null && (now - _fngCache.updatedAt) < FNG_CACHE_TTL) {
+      return _buildFngResult(_fngCache.value, _fngCache.classification, direction);
+    }
+
+    const resp = await axios.get('https://api.alternative.me/fng/?limit=1', {
+      timeout: 6000,
+      headers: { 'User-Agent': 'TradingDashboard/1.0' },
+    });
+
+    const entry = resp.data?.data?.[0];
+    if (!entry || entry.value === undefined) {
+      logger.warn('Fear & Greed: resposta inesperada da API', resp.data);
+      return null;
+    }
+
+    const value          = parseInt(entry.value, 10);
+    const classification = entry.value_classification || '';
+
+    _fngCache.value          = value;
+    _fngCache.classification = classification;
+    _fngCache.updatedAt      = now;
+
+    return _buildFngResult(value, classification, direction);
+  } catch (err) {
+    logger.warn(`Fear & Greed fetch falhou: ${err.message}`);
+    return null;
+  }
+}
+
+function _buildFngResult(value, classification, direction) {
+  const isExtremeFear  = value <= 24;
+  const isExtremeGreed = value >= 75;
+  const isFear         = value >= 25 && value <= 44;
+  const isGreed        = value >= 56 && value <= 74;
+
+  // Bônus: extremos confirmam entradas de reversão / continuação
+  const btcBuyAligned  = isExtremeFear;   // medo extremo → BTC sobrevendido → bônus BUY
+  const btcSellAligned = isExtremeGreed;  // ganância extrema → BTC sobrecomprado → bônus SELL
+  const aligned        = direction === 'BUY'  ? btcBuyAligned
+                       : direction === 'SELL' ? btcSellAligned
+                       : false;
+
+  // Aviso quando o sentimento opõe a direção do sinal
+  const opposing = (direction === 'BUY'  && isExtremeGreed)
+                || (direction === 'SELL' && isExtremeFear);
+
+  let emoji = '😐';
+  if (isExtremeFear)  emoji = '😱';
+  else if (isFear)    emoji = '😰';
+  else if (isGreed)   emoji = '😏';
+  else if (isExtremeGreed) emoji = '🤑';
+
+  return {
+    value,
+    classification,
+    emoji,
+    isExtremeFear,
+    isExtremeGreed,
+    aligned,   // true → +1 bônus
+    opposing,  // true → aviso (sem penalidade)
+    warning: opposing
+      ? `⚠️ Fear & Greed ${emoji} ${value} (${classification}) — sentimento contra o sinal ${direction}`
+      : null,
+  };
+}
+
+/**
  * Determina o viés direcional (BUY/SELL/NEUTRAL) baseado nas EMAs 9/20/50
  */
 function getBiasTf(candles) {
@@ -2462,22 +2548,33 @@ async function computeVipSignal(assetKey, entryTf = '15m', biasTf = '1h', { skip
   // Alinha a direção do sinal com a tendência macro de 4 horas.
   // +1 se o 4H confirma a direção; aviso se opõe (sem penalidade).
   // Melhora estimada: +8–12% de precisão ao eliminar trades contra a macro.
-  const candles4h     = data['4h'] || [];
-  const bias4h        = candles4h.length >= 55 ? getBiasTf(candles4h) : 'NEUTRAL';
-  const filter4hBias  = bias4h === direction;          // +1 se 4H confirma
-  const bias4hOpposing = bias4h !== 'NEUTRAL' && bias4h !== direction; // aviso se opõe
+  const candles4h      = data['4h'] || [];
+  const bias4h         = candles4h.length >= 55 ? getBiasTf(candles4h) : 'NEUTRAL';
+  const filter4hBias   = bias4h === direction;
+  const bias4hOpposing = bias4h !== 'NEUTRAL' && bias4h !== direction;
+
+  // BÔNUS 11: Fear & Greed Index — apenas BTC (API Alternative.me, gratuita)
+  // Medo Extremo (≤24) = +1 BUY | Ganância Extrema (≥75) = +1 SELL
+  // Neutro/Fear/Greed moderado = sem bônus (mas exibido no Telegram como contexto)
+  let fngCtx       = null;
+  let filterFng    = false;
+  if (assetKey === 'btc') {
+    fngCtx    = await fetchFearGreedIndex(direction);
+    filterFng = fngCtx?.aligned === true;
+  }
 
   // Score base: ema(2) + breakout(2) + adx(2) + session(1) = 7
   // Bônus universais:  insideBar+volume+bbSqueeze+pullback+divConfirm+fib+bias4h = +7
   // Bônus por ativo:
-  //   USD/JPY:  + ichimoku(+1)             = max 15
-  //   BTC:      + ichimoku(+1) + vwap(+1)  = max 16
-  //   XAU/USD:  + vwap(+1)    + dxy(+1)   = max 16
-  //   EUR/USD:  apenas os 7 universais     = max 14
-  const maxBonus = 7                              // 6 anteriores + bias4h universal
+  //   USD/JPY:  + ichimoku(+1)                        = max 15
+  //   BTC:      + ichimoku(+1) + vwap(+1) + fng(+1)  = max 17
+  //   XAU/USD:  + vwap(+1)    + dxy(+1)              = max 16
+  //   EUR/USD:  apenas os 7 universais                = max 14
+  const maxBonus = 7
     + (ichimokuCtx !== null ? 1 : 0)
     + (vwapCtx     !== null ? 1 : 0)
-    + (dxyCtx      !== null ? 1 : 0);
+    + (dxyCtx      !== null ? 1 : 0)
+    + (fngCtx      !== null ? 1 : 0);   // BTC only
   const maxScore = 7 + maxBonus;
 
   let score = 0;
@@ -2495,6 +2592,7 @@ async function computeVipSignal(assetKey, entryTf = '15m', biasTf = '1h', { skip
   if (filterFib)        score += 1;
   if (filterDxy)        score += 1;
   if (filter4hBias)     score += 1;
+  if (filterFng)        score += 1;
 
   // Penalidade de volume: breakout com volume fraco (dados disponíveis mas abaixo da média)
   if (filterBreakout && volumeConfirmed === false) score -= 1;
@@ -2524,7 +2622,8 @@ async function computeVipSignal(assetKey, entryTf = '15m', biasTf = '1h', { skip
                    + (filterBBSqueeze  ? 1 : 0) + (filterIchimoku  ? 1 : 0)
                    + (filterVwap       ? 1 : 0) + (filterPullback  ? 1 : 0)
                    + (filterDivConfirm ? 1 : 0) + (filterFib        ? 1 : 0)
-                   + (filterDxy        ? 1 : 0) + (filter4hBias     ? 1 : 0);
+                   + (filterDxy        ? 1 : 0) + (filter4hBias     ? 1 : 0)
+                   + (filterFng        ? 1 : 0);
   // maxScore calculado acima de forma dinâmica por ativo
 
   let status, reason;
@@ -2579,6 +2678,9 @@ async function computeVipSignal(assetKey, entryTf = '15m', biasTf = '1h', { skip
       // Bias macro 4H — universal (todos os ativos)
       bias4hOk:       filter4hBias,   // 4H confirma direção
       bias4hOpposing: bias4hOpposing, // 4H opõe → aviso
+      // Fear & Greed — BTC only
+      fngOk:          filterFng,      // extremo alinhado com direção
+      fngOpposing:    fngCtx?.opposing ?? false, // extremo contra direção → aviso
     },
     levels: {
       entry:   parseFloat(entry.toFixed(cfg.decimals)),
@@ -2648,13 +2750,22 @@ async function computeVipSignal(assetKey, entryTf = '15m', biasTf = '1h', { skip
       } : null,
       // Bias 4H — universal
       bias4h: {
-        trend:     bias4h,        // 'BUY' | 'SELL' | 'NEUTRAL'
-        aligned:   filter4hBias,  // confirma direção do sinal
+        trend:     bias4h,
+        aligned:   filter4hBias,
         opposing:  bias4hOpposing,
         warning:   bias4hOpposing
           ? `⚠️ Macro 4H em ${bias4h} — sinal ${direction} vai contra a tendência maior`
           : null,
       },
+      // Fear & Greed Index — BTC only
+      fearGreed: fngCtx ? {
+        value:          fngCtx.value,
+        classification: fngCtx.classification,
+        emoji:          fngCtx.emoji,
+        aligned:        fngCtx.aligned,
+        opposing:       fngCtx.opposing,
+        warning:        fngCtx.warning,
+      } : null,
     },
     operationalContext: vipOperationalContext,
     generatedAt: Date.now(),
@@ -2760,8 +2871,10 @@ async function computeVipSignal(assetKey, entryTf = '15m', biasTf = '1h', { skip
     if (f.fibOk)        bonusLines.push(`⭐ Fibonacci ${m.fibonacci?.nearLevel?.label ?? ''} — entrada em zona de retração chave`);
     if (f.dxyOk)        bonusLines.push(`⭐ DXY ${m.dxy?.trend === 'DOWN' ? '📉 caindo' : '📈 subindo'} — favorável para ${direction} em XAU`);
     if (f.bias4hOk)     bonusLines.push(`⭐ Bias 4H confirma ${direction} — macro alinhada com o sinal`);
+    if (f.fngOk)        bonusLines.push(`⭐ Fear & Greed ${m.fearGreed?.emoji} ${m.fearGreed?.value} (${m.fearGreed?.classification}) — sentimento extremo confirma ${direction}`);
     if (f.divOpposing)  bonusLines.push(`⚠️ Divergência ${direction === 'BUY' ? 'bearish' : 'bullish'} detectada — sinal contrário ao trend`);
     if (f.bias4hOpposing) bonusLines.push(`⚠️ Macro 4H em ${m.bias4h?.trend} — ${direction} vai contra a tendência maior`);
+    if (f.fngOpposing)  bonusLines.push(m.fearGreed?.warning);
     if (m.ema200 && !m.ema200.aligned) bonusLines.push(m.ema200.warning);
     if (m.ichimoku?.insideKumo) bonusLines.push(`⚠️ Preço DENTRO da Kumo — zona de transição, cautela`);
     if (m.dxy?.warning) bonusLines.push(m.dxy.warning);
@@ -2795,7 +2908,8 @@ async function computeVipSignal(assetKey, entryTf = '15m', biasTf = '1h', { skip
       `${result.operationalContext.status} — ${result.operationalContext.summary}`,
       `${result.operationalContext.detail}`,
       ``,
-      `Bias: ${biasTf.toUpperCase()}  |  Entry: ${entryTf.toUpperCase()}  |  Macro 4H: ${bias4h}`,
+      `Bias: ${biasTf.toUpperCase()}  |  Entry: ${entryTf.toUpperCase()}  |  Macro 4H: ${bias4h}`
+        + (fngCtx ? `  |  F&G: ${fngCtx.emoji}${fngCtx.value}` : ''),
     ].join('\n');
 
     sendTelegram(vipMsg).catch(() => {});
