@@ -3102,6 +3102,11 @@ app.post('/api/admin/users/:id/revoke-sessions', rateLimit, requireAdmin, (req, 
 
 // ===== ROTAS VIP =====
 
+// Cache de resultado por ativo — evita recalcular ao trocar de ativo na UI
+// TTL: 2 minutos. O ciclo de polling do servidor (15min) sempre força recálculo.
+const _signalCache = {};          // { [cacheKey]: { data, cachedAt } }
+const SIGNAL_CACHE_TTL = 2 * 60 * 1000; // 2 minutos
+
 app.get('/api/vip/signal', rateLimit, requireVipAccess, async (req, res) => {
   const asset   = (req.query.asset   || 'xauusd').toLowerCase();
   const entryTf = (req.query.entryTf || '15m').toLowerCase();
@@ -3110,11 +3115,24 @@ app.get('/api/vip/signal', rateLimit, requireVipAccess, async (req, res) => {
   const validTfs = ['15m', '1h', '4h', 'daily', '1d'];
   if (!validTfs.includes(entryTf)) return res.status(400).json({ success: false, error: `entryTf inválido` });
   if (!validTfs.includes(biasTf))  return res.status(400).json({ success: false, error: `biasTf inválido` });
+
+  const cacheKey   = `${asset}:${entryTf}:${biasTf}`;
+  const cached     = _signalCache[cacheKey];
+  const forceRefresh = req.query.force === '1';
+
+  // Retorna do cache se fresco (< 2 min) e não forçado
+  if (!forceRefresh && cached && (Date.now() - cached.cachedAt) < SIGNAL_CACHE_TTL) {
+    return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
+  }
+
   try {
     const signal = await computeVipSignal(asset, entryTf, biasTf, { skipPersist: true });
+    _signalCache[cacheKey] = { data: signal, cachedAt: Date.now() };
     res.json(signal);
   } catch (err) {
     logger.error('VIP signal error:', err.message);
+    // Se falhou mas tem cache, retorna cache mesmo expirado
+    if (cached) return res.json({ ...cached.data, _cached: true, _stale: true });
     res.status(500).json({ success: false, error: err.message });
   }
 });
