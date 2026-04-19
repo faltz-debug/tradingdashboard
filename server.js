@@ -2228,7 +2228,7 @@ async function fetchDxyTrend(direction) {
       try {
         const res = await axios.get('https://api.twelvedata.com/time_series', {
           params: { symbol: 'DX-Y.NYB', interval: '15min', outputsize: 60, apikey: TWELVE_DATA_KEY },
-          timeout: 8000,
+          timeout: 4000,
         });
         if (res.data?.values?.length >= 20) {
           closes = res.data.values.reverse().map(v => parseFloat(v.close));
@@ -2241,7 +2241,7 @@ async function fetchDxyTrend(direction) {
       try {
         const res = await axios.get(
           'https://query1.finance.yahoo.com/v8/finance/chart/DX-Y.NYB',
-          { params: { interval: '15m', range: '5d' }, timeout: 8000 }
+          { params: { interval: '15m', range: '5d' }, timeout: 4000 }
         );
         const result = res.data?.chart?.result?.[0];
         const rawCloses = result?.indicators?.quote?.[0]?.close;
@@ -2322,7 +2322,7 @@ async function fetchFearGreedIndex(direction) {
     }
 
     const resp = await axios.get('https://api.alternative.me/fng/?limit=1', {
-      timeout: 6000,
+      timeout: 3000,
       headers: { 'User-Agent': 'TradingDashboard/1.0' },
     });
 
@@ -3742,7 +3742,9 @@ setInterval(async () => {
 
       if (!data.isSimulation && !data.isMarketClosed) {
         try {
-          await computeVipSignal(key, '15m', '1h', { skipPersist: false });
+          const sig = await computeVipSignal(key, '15m', '1h', { skipPersist: false });
+          // Pre-aquece o cache da rota /api/vip/signal para troca de ativo instantânea
+          _signalCache[`${key}:15m:1h`] = { data: sig, cachedAt: Date.now() };
         } catch (vipErr) {
           logger.warn(`VIP scan ${key}:`, vipErr.message);
         }
