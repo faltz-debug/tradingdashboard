@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>Resumo das Modificações - Trading Dashboard</title>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --panel: #111827;
+      --text: #dbe4f0;
+      --muted: #94a3b8;
+      --cyan: #22d3ee;
+      --green: #22c55e;
+      --gold: #f59e0b;
+      --red: #f87171;
+      --border: #1f2937;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 32px;
+      font-family: "Segoe UI", Arial, sans-serif;
+      background: linear-gradient(180deg, #0b1220 0%, #0f172a 100%);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    .wrap {
+      max-width: 980px;
+      margin: 0 auto;
+    }
+    .hero, .section {
+      background: rgba(17, 24, 39, 0.94);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 18px;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.22);
+    }
+    h1, h2 {
+      margin: 0 0 12px 0;
+      line-height: 1.2;
+    }
+    h1 { font-size: 30px; color: var(--cyan); }
+    h2 { font-size: 20px; color: #f8fafc; }
+    p { margin: 10px 0; color: var(--text); }
+    .muted { color: var(--muted); }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .card {
+      background: #0b1220;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+    }
+    .card h3 {
+      margin: 0 0 8px 0;
+      font-size: 16px;
+      color: #f8fafc;
+    }
+    ul {
+      margin: 8px 0 0 0;
+      padding-left: 18px;
+    }
+    li { margin: 6px 0; color: var(--text); }
+    .tag {
+      display: inline-block;
+      margin-right: 8px;
+      margin-bottom: 8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      border: 1px solid transparent;
+    }
+    .ok { color: var(--green); border-color: rgba(34,197,94,.35); background: rgba(34,197,94,.08); }
+    .warn { color: var(--gold); border-color: rgba(245,158,11,.35); background: rgba(245,158,11,.08); }
+    .risk { color: var(--red); border-color: rgba(248,113,113,.35); background: rgba(248,113,113,.08); }
+    .next {
+      border-left: 4px solid var(--cyan);
+      padding-left: 14px;
+      margin-top: 8px;
+    }
+    @media print {
+      body { padding: 0; background: #fff; color: #111827; }
+      .hero, .section, .card { box-shadow: none; background: #fff; color: #111827; }
+      .muted { color: #475569; }
+      h1 { color: #0f766e; }
+      .tag.ok, .tag.warn, .tag.risk { background: #fff; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <h1>Trading Dashboard - Resumo das Modificações</h1>
+      <p class="muted">Atualizado em 14/04/2026. Este resumo cobre os ajustes de confiabilidade, dados reais, alinhamento entre motor ao vivo e backtester, auditoria de sinais e correções de deploy/UI.</p>
+      <div>
+        <span class="tag ok">Dashboard online</span>
+        <span class="tag ok">VIP online</span>
+        <span class="tag ok">Backtester restaurado</span>
+        <span class="tag ok">Twelve + Kraken ativos</span>
+        <span class="tag warn">Auditoria agora visível</span>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>1. Infraestrutura e Dados</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>Fontes corrigidas</h3>
+          <ul>
+            <li><strong>BTCUSD</strong> mantido via Kraken.</li>
+            <li><strong>XAUUSD, EURUSD, USDJPY</strong> voltaram para Twelve Data.</li>
+            <li>Railway recebeu a variável correta <strong>TWELVE_DATA_KEY</strong>.</li>
+            <li>Health endpoint voltou a responder com dados reais.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Robustez operacional</h3>
+          <ul>
+            <li>Filtro de candle fechado no fallback do Twelve Data.</li>
+            <li>VIP_TOKEN configurado no Railway.</li>
+            <li>Rotas VIP validadas em produção.</li>
+            <li>Deploys truncados corrigidos em dashboard, VIP e backtester.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>2. Alinhamento da Estratégia</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>Motor ao vivo</h3>
+          <ul>
+            <li>Sinal mestre baseado em <strong>EMA Tendência + RSI Momentum + Breakout</strong>.</li>
+            <li>Rebaixamento por <strong>ADX baixo</strong> mantido como parte real da decisão.</li>
+            <li>Dashboard deixou de comunicar MACD como peça central.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Backtester</h3>
+          <ul>
+            <li>Estratégia <strong>Master Signal</strong> alinhada com os mesmos thresholds do servidor.</li>
+            <li>Entrada no score bruto forte e saída por TP, SL ou perda de força.</li>
+            <li>Backtester agora conversa melhor com o motor ao vivo.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>3. Auditoria de Sinais</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>No servidor</h3>
+          <ul>
+            <li>Payload da API agora inclui <strong>audit</strong> no sinal ao vivo.</li>
+            <li>Expõe regime, votos dos filtros, score antes/depois do ADX, sessão e notícia.</li>
+            <li>Telegram também ganhou bloco de auditoria no alerta.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>No backtester</h3>
+          <ul>
+            <li>Cada trade do <strong>Master Signal</strong> grava score de entrada/saída, ADX, sessão, news e motivo da saída.</li>
+            <li>Tabela mostra <strong>Saída</strong> e <strong>Auditoria</strong>.</li>
+            <li>Resumo mostra ADX médio, motivos de saída e leitura contextual.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>4. Métricas Novas no Backtester</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>Resumo por regime</h3>
+          <ul>
+            <li><strong>Trend Forte / WR</strong> para ADX ≥ 40.</li>
+            <li><strong>Trend Moderada / WR</strong> para 25 ≤ ADX &lt; 40.</li>
+            <li><strong>Melhor Sessão</strong> por retorno agregado.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Leitura mais confiável</h3>
+          <ul>
+            <li>Agora dá para ver onde a estratégia funciona melhor.</li>
+            <li>Menos foco em “win rate solto” e mais foco em contexto operacional.</li>
+            <li>Facilita separar quando o sistema está bom e quando está só “parecendo bom”.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>5. Próximo Passo Recomendado</h2>
+      <div class="next">
+        <p><strong>Próximo passo mais valioso:</strong> criar um <strong>histórico auditável de sinais ao vivo</strong> com resultado posterior.</p>
+        <p>Em vez de só mostrar o sinal atual, o app deve registrar para cada sinal emitido:</p>
+        <ul>
+          <li>motivo completo da entrada,</li>
+          <li>contexto de mercado,</li>
+          <li>se virou trade ou não,</li>
+          <li>e qual foi o resultado depois de X candles.</li>
+        </ul>
+        <p>Isso permite medir assertividade real por ativo, sessão, regime, tipo de saída e qualidade do contexto. É o passo que mais aproxima o produto de uma ferramenta confiável para trader operar com disciplina.</p>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>6. Leitura Honesta do Estado Atual</h2>
+      <p>O app ficou muito mais confiável do que estava: dados reais, rotas estáveis, dashboard/VIP/backtester restaurados, lógica central mais alinhada e auditoria visível.</p>
+      <p>Ainda assim, o caminho para “assertividade profissional” continua passando por <strong>monitorar resultado real dos sinais emitidos</strong>, e não só por backtest ou pela aparência do score atual.</p>
+      <div>
+        <span class="tag ok">Base técnica sólida</span>
+        <span class="tag ok">Auditoria inicial pronta</span>
+        <span class="tag warn">Falta fechar loop de performance live</span>
+        <span class="tag risk">Sem isso, a confiança ainda é parcial</span>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

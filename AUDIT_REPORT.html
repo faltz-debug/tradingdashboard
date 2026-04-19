@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Auditoria Completa — Trading Dashboard</title>
+<style>
+  :root { --bg: #0a0e17; --card: #111827; --border: #1e293b; --accent: #3b82f6; --green: #10b981; --red: #ef4444; --yellow: #f59e0b; --orange: #f97316; --text: #e2e8f0; --muted: #94a3b8; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); line-height: 1.7; padding: 40px 20px; }
+  .container { max-width: 1000px; margin: 0 auto; }
+  h1 { font-size: 2rem; margin-bottom: 8px; color: #fff; }
+  h2 { font-size: 1.5rem; margin: 40px 0 16px; padding-bottom: 8px; border-bottom: 2px solid var(--accent); color: #fff; }
+  h3 { font-size: 1.15rem; margin: 24px 0 12px; color: var(--accent); }
+  p { margin-bottom: 12px; }
+  .subtitle { color: var(--muted); font-size: 0.95rem; margin-bottom: 32px; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 4px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; margin-right: 6px; }
+  .critical { background: var(--red); color: #fff; }
+  .high { background: var(--orange); color: #fff; }
+  .medium { background: var(--yellow); color: #000; }
+  .low { background: var(--green); color: #fff; }
+  .good { background: #059669; color: #fff; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+  .card-title { font-weight: 700; margin-bottom: 8px; }
+  .card code { background: #1e293b; padding: 2px 6px; border-radius: 4px; font-size: 0.85em; color: var(--accent); }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 0.9rem; }
+  th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); }
+  th { background: #1e293b; color: #fff; font-weight: 600; }
+  tr:hover { background: rgba(59,130,246,0.05); }
+  .score-box { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 8px; font-size: 1.1rem; font-weight: 700; }
+  .score-box.warn { background: rgba(245, 158, 11, 0.15); border: 1px solid var(--yellow); color: var(--yellow); }
+  .meter { height: 8px; background: #1e293b; border-radius: 4px; overflow: hidden; margin: 8px 0; }
+  .meter-fill { height: 100%; border-radius: 4px; }
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin: 20px 0; }
+  .summary-item { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; text-align: center; }
+  .summary-item .number { font-size: 2rem; font-weight: 700; }
+  .feature-card { background: var(--card); border-left: 4px solid var(--accent); padding: 16px 20px; margin: 12px 0; border-radius: 0 8px 8px 0; }
+  .comparison-table td:first-child { font-weight: 600; }
+  .check { color: var(--green); }
+  .cross { color: var(--red); }
+  .partial { color: var(--yellow); }
+  ul { padding-left: 20px; margin: 8px 0; }
+  li { margin: 4px 0; }
+  .fix-code { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 12px 16px; font-family: 'Consolas', monospace; font-size: 0.85rem; overflow-x: auto; margin: 8px 0; white-space: pre-wrap; color: #c9d1d9; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>Auditoria Tecnica Completa</h1>
+<p class="subtitle">Trading Dashboard v6.0.0 — Abril 2026 — Revisao de Codigo, Seguranca, Performance e Plano de Expansao</p>
+
+<div class="summary-grid">
+  <div class="summary-item">
+    <div class="number" style="color:var(--red)">4</div>
+    <div>Criticos</div>
+  </div>
+  <div class="summary-item">
+    <div class="number" style="color:var(--orange)">7</div>
+    <div>Alta Prioridade</div>
+  </div>
+  <div class="summary-item">
+    <div class="number" style="color:var(--yellow)">8</div>
+    <div>Media</div>
+  </div>
+  <div class="summary-item">
+    <div class="number" style="color:var(--green)">6</div>
+    <div>Pontos Positivos</div>
+  </div>
+</div>
+
+<div class="score-box warn">Score Geral: 6.5/10 — Funcional, mas precisa de correcoes antes de escalar</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>1. PROBLEMAS CRITICOS (Corrigir Imediatamente)</h2>
+
+<div class="card">
+  <div class="card-title"><span class="badge critical">CRITICO</span> C1 — Credenciais expostas no repositorio</div>
+  <p>O arquivo <code>.env</code> esta commitado no Git com chaves reais: <code>TWELVE_DATA_KEY</code>, <code>TELEGRAM_TOKEN</code>, <code>TELEGRAM_CHAT_ID</code>.</p>
+  <p><strong>Risco:</strong> Qualquer pessoa com acesso ao repositorio pode controlar seu bot Telegram e consumir seus creditos da Twelve Data.</p>
+  <p><strong>Acao:</strong> (1) Revogar e regenerar todos os tokens. (2) Remover .env do historico Git com <code>git filter-repo</code>. (3) Confirmar que <code>.env</code> esta no <code>.gitignore</code> (esta, mas o arquivo ja foi commitado antes).</p>
+</div>
+
+<div class="card">
+  <div class="card-title"><span class="badge critical">CRITICO</span> C2 — Calculo de Divergencia invertido</div>
+  <p><strong>Arquivo:</strong> <code>server.js</code> linhas 486-542</p>
+  <p>A deteccao de divergencia confunde bearish com bullish hidden. Quando o preco faz Higher High e o MACD faz Lower High, o codigo rotula como <code>bearish_macd</code>, mas isso e na verdade uma divergencia bullish hidden (continuacao de alta).</p>
+  <p><strong>Impacto:</strong> Traders recebem sinais de direcao oposta ao que o padrao indica, podendo entrar trades contra a tendencia.</p>
+</div>
+
+<div class="card">
+  <div class="card-title"><span class="badge critical">CRITICO</span> C3 — Marcadores SL/TP invertidos no Backtester (SHORT)</div>
+  <p><strong>Arquivo:</strong> <code>backtester.html</code> linha 1483</p>
+  <p>Para trades SHORT, o marcador de saida aparece <code>belowBar</code> quando deveria ser <code>aboveBar</code>. Alem disso, o backtester nao renderiza linhas horizontais de SL/TP no grafico — so mostra na tabela.</p>
+  <p><strong>Impacto:</strong> O que o usuario ve no grafico nao bate com os numeros da tabela, como voce mesmo observou.</p>
+</div>
+
+<div class="card">
+  <div class="card-title"><span class="badge critical">CRITICO</span> C4 — Race condition no estado de alertas</div>
+  <p><strong>Arquivo:</strong> <code>server.js</code> linhas 819-831</p>
+  <p>O estado dos alertas e atualizado em memoria e salvo no disco com debounce de 500ms. Se o servidor crashar nesse intervalo, alertas duplicados ou perdidos ocorrem no restart. Multiplas escritas concorrentes podem corromper o JSON.</p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>2. ALTA PRIORIDADE</h2>
+
+<div class="card">
+  <div class="card-title"><span class="badge high">ALTO</span> H1 — MACD Signal Line sem inicializacao correta</div>
+  <p>A signal line comeca do primeiro valor do MACD array em vez de usar SMA(9) dos primeiros 9 valores como inicializacao. Produz valores diferentes do TradingView/MT5 nos primeiros ~50 candles.</p>
+</div>
+
+<div class="card">
+  <div class="card-title"><span class="badge high">ALTO</span> H2 — Sem retry no loop principal de alertas</div>
+  <p>Se OANDA/Yahoo/Kraken falhar, o erro e logado mas nao ha retry, backoff exponencial ou alerta ao trader. O sistema degrada silenciosamente.</p>
+</div>
+
+<div class="card">
+  <div class="card-title"><span class="badge high">ALTO</span> H3 — Validacao de dados Kraken/Yahoo ausente</div>
+  <p>Arrays recebidos das APIs nao sao validados (NaN, null, formato errado). Um candle corrompido propaga para todos os indicadores.</p>
+</div>
+
+<div class="card">
+  <div class="card-title"><span class="badge high">ALTO</span> H4 — VIP: sem validacao de formulario</div>
+  <p><code>parseFloat()</code> em campos vazios retorna NaN. Sem verificacao de SL/TP no lado correto da entrada (BUY: SL &lt; Entry &lt; TP).</p>
+</div>
+
+<div class="card">
+  <div class="card-title"><span class="badge high">ALTO</span> H5 — Telegram falha silenciosamente</div>
+  <p>Muitos chamadores usam <code>.catch(() =&gt; {})</code> — se o token expirar ou o chat ID mudar, alertas param sem aviso.</p>
+</div>
+
+<div class="card">
+  <div class="card-title"><span class="badge high">ALTO</span> H6 — VIP: timeframe bias nao validado</div>
+  <p>Se chamar <code>/api/vip/signal?entryTf=1h&biasTf=15m</code>, a logica inverte (bias menor que entry), produzindo sinais errados.</p>
+</div>
+
+<div class="card">
+  <div class="card-title"><span class="badge high">ALTO</span> H7 — CORS wildcard em producao</div>
+  <p><code>FRONTEND_ORIGIN=*</code> permite requisicoes de qualquer dominio. Em producao, deve ser restrito ao dominio do Railway.</p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>3. MEDIA PRIORIDADE</h2>
+
+<table>
+  <tr><th>ID</th><th>Problema</th><th>Arquivo</th><th>Impacto</th></tr>
+  <tr><td>M1</td><td>Rate limit bypassavel via X-Forwarded-For spoofing</td><td>server.js</td><td>Seguranca</td></tr>
+  <tr><td>M2</td><td>Gaps nos dados do Yahoo Finance nao detectados</td><td>server.js</td><td>Indicadores incorretos</td></tr>
+  <tr><td>M3</td><td>Sem loading state nos graficos (tela branca durante fetch)</td><td>dashboard.html</td><td>UX</td></tr>
+  <tr><td>M4</td><td>Race condition no refresh VIP (cliques rapidos)</td><td>vip.html</td><td>Dados inconsistentes</td></tr>
+  <tr><td>M5</td><td>tradeStore.js: escritas concorrentes podem corromper JSON</td><td>tradeStore.js</td><td>Perda de dados</td></tr>
+  <tr><td>M6</td><td>Sem versao exata no package.json (caret ranges)</td><td>package.json</td><td>Builds nao reproduziveis</td></tr>
+  <tr><td>M7</td><td>Sem .env.example para novos desenvolvedores</td><td>raiz</td><td>Onboarding</td></tr>
+  <tr><td>M8</td><td>server.js com 1800+ linhas (mistura rotas, logica, APIs)</td><td>server.js</td><td>Manutencao</td></tr>
+</table>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>4. O QUE ESTA BEM FEITO</h2>
+
+<div class="card" style="border-left: 3px solid var(--green);">
+  <div class="card-title"><span class="badge good">BOM</span> Cadeia de fallback robusta</div>
+  <p><code>getAsset()</code> implementa: Cache RT → Cache normal → Mercado fechado → OANDA → Yahoo → Twelve Data → Simulacao. O sistema sempre tem dados, mesmo com multiplas falhas de API.</p>
+</div>
+
+<div class="card" style="border-left: 3px solid var(--green);">
+  <div class="card-title"><span class="badge good">BOM</span> Confluencia multi-timeframe</div>
+  <p>Valida que 15M + 1H + 4H concordam antes de elevar a confianca do sinal. Reduz falsos positivos significativamente.</p>
+</div>
+
+<div class="card" style="border-left: 3px solid var(--green);">
+  <div class="card-title"><span class="badge good">BOM</span> Filtro ADX para mercados laterais</div>
+  <p>ADX &lt; 25 suprime alertas de tendencia. Evita operar em mercados sem direcao (chop). Pratica profissional.</p>
+</div>
+
+<div class="card" style="border-left: 3px solid var(--green);">
+  <div class="card-title"><span class="badge good">BOM</span> Calendario economico integrado</div>
+  <p>Buffer de 30 minutos antes/depois de noticias de alto impacto (NFP, CPI, FOMC). Excelente gestao de risco.</p>
+</div>
+
+<div class="card" style="border-left: 3px solid var(--green);">
+  <div class="card-title"><span class="badge good">BOM</span> Rate limiting nativo sem dependencias</div>
+  <p>Implementacao limpa com cleanup automatico de IPs antigos e headers Retry-After corretos.</p>
+</div>
+
+<div class="card" style="border-left: 3px solid var(--green);">
+  <div class="card-title"><span class="badge good">BOM</span> Cooldown de alertas Telegram</div>
+  <p>1h entre alertas do mesmo ativo previne spam. Estado persistido no disco sobrevive restarts.</p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>5. COMPARACAO COM PLATAFORMAS DO MERCADO</h2>
+
+<table class="comparison-table">
+  <tr><th>Feature</th><th>Seu Dashboard</th><th>TradingView</th><th>QuantConnect</th><th>3Commas</th></tr>
+  <tr><td>Sinais em tempo real</td><td class="check">Sim (Kraken/Yahoo)</td><td class="check">Sim</td><td class="check">Sim</td><td class="check">Sim</td></tr>
+  <tr><td>Multi-timeframe</td><td class="check">Sim (15M/1H/4H)</td><td class="check">Sim</td><td class="check">Sim</td><td class="partial">Parcial</td></tr>
+  <tr><td>Backtester</td><td class="partial">Basico (5 strats)</td><td class="check">Avancado</td><td class="check">Enterprise</td><td class="cross">Nao</td></tr>
+  <tr><td>Alertas Telegram</td><td class="check">Sim</td><td class="partial">Webhook</td><td class="cross">Nao</td><td class="check">Sim</td></tr>
+  <tr><td>Calendario economico</td><td class="check">Sim</td><td class="check">Sim</td><td class="cross">Nao</td><td class="cross">Nao</td></tr>
+  <tr><td>Execucao automatica</td><td class="cross">Nao</td><td class="cross">Nao (manual)</td><td class="check">Sim</td><td class="check">Sim</td></tr>
+  <tr><td>Trade journal</td><td class="partial">VIP basico</td><td class="cross">Nao</td><td class="check">Sim</td><td class="partial">Parcial</td></tr>
+  <tr><td>Risk management</td><td class="partial">ATR-based SL/TP</td><td class="cross">Nao</td><td class="check">Sim</td><td class="check">Sim</td></tr>
+  <tr><td>Mobile</td><td class="cross">Nao</td><td class="check">App nativo</td><td class="cross">Nao</td><td class="check">App</td></tr>
+  <tr><td>Multi-ativos</td><td class="check">4 (BTC/XAU/EUR/JPY)</td><td class="check">10.000+</td><td class="check">1.000+</td><td class="check">500+</td></tr>
+  <tr><td>Preco</td><td class="check">Gratuito</td><td class="partial">Free/Pro $15-60/mes</td><td class="partial">Free/Pro $8-36/mes</td><td class="partial">$22-49/mes</td></tr>
+</table>
+
+<p>Seu dashboard tem vantagem competitiva em: alertas Telegram integrados, calendario economico no sinal, e custo zero. Falta: execucao automatica, mais ativos, e mobile.</p>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>6. O QUE TIRAR</h2>
+
+<div class="card">
+  <div class="card-title">Remover ou limpar:</div>
+  <ul>
+    <li><strong>backtester-FIXED.html</strong> — arquivo duplicado/antigo, confunde o projeto</li>
+    <li><strong>server.out.log / server.err.log</strong> — logs de desenvolvimento, nao devem estar no repo</li>
+    <li><strong>test_out.txt</strong> — arquivo de teste temporario</li>
+    <li><strong>dashboard.html.tmp.*</strong> — arquivo temporario de edicao</li>
+    <li><strong>STRATEGY_COMPARISON_ANALYSIS.md</strong> — mover para pasta /docs se quiser manter</li>
+    <li><strong>strategy-review-report.pdf</strong> — mover para /docs</li>
+    <li><strong>Fallback de simulacao</strong> — dados aleatorios confundem usuarios. Melhor mostrar "Sem dados" do que dados falsos</li>
+    <li><strong>Twelve Data como fallback</strong> — Com Yahoo Finance gratuito, Twelve Data pode ser removido (economiza a complexidade e os 800 creditos/dia)</li>
+  </ul>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>7. O QUE IMPLEMENTAR (Proximas Semanas)</h2>
+
+<h3>Semana 1-2: Correcoes Criticas</h3>
+<div class="feature-card">
+  <strong>1. Revogar tokens expostos</strong> — Regenerar TWELVE_DATA_KEY, TELEGRAM_TOKEN. Limpar historico Git.<br>
+  <strong>2. Corrigir divergencia invertida</strong> — 20 minutos de codigo, impacto enorme na qualidade dos sinais.<br>
+  <strong>3. Corrigir backtester SHORT markers</strong> — Inverter posicao do marker + adicionar linhas SL/TP no grafico.<br>
+  <strong>4. Adicionar validacao de dados</strong> — NaN checks em todos os fetchers (Kraken, Yahoo, OANDA).<br>
+  <strong>5. CORS restritivo</strong> — Mudar FRONTEND_ORIGIN para URL do Railway em producao.
+</div>
+
+<h3>Semana 3-4: Robustez</h3>
+<div class="feature-card">
+  <strong>6. Retry com backoff exponencial</strong> — Em todas as chamadas de API e Telegram.<br>
+  <strong>7. Alerta de falha do sistema</strong> — Se 3 ciclos consecutivos falharem, manda Telegram avisando.<br>
+  <strong>8. Validacao VIP</strong> — Forms, timeframes, direcao SL/TP.<br>
+  <strong>9. Loading states</strong> — Spinners nos graficos durante fetch.<br>
+  <strong>10. Atomic writes</strong> — tradeStore.js com write para arquivo temp + rename.
+</div>
+
+<h3>Semana 5-8: Features Novas</h3>
+<div class="feature-card">
+  <strong>11. Trade Journal completo</strong> — Registro de cada trade com screenshot do grafico, notas, emocao, resultado. Traders profissionais usam isso para melhorar.<br>
+  <strong>12. Estatisticas avancadas do backtester</strong> — Sharpe ratio, max drawdown, profit factor, win rate por sessao de mercado, por dia da semana.<br>
+  <strong>13. Mais ativos</strong> — GBP/USD, AUD/USD, NAS100, SPX500 (Yahoo Finance suporta todos).<br>
+  <strong>14. Notificacoes push</strong> — Service Worker para notificacoes no browser (substitui necessidade de app mobile).<br>
+  <strong>15. Modo escuro/claro toggle</strong> — Mais acessibilidade.
+</div>
+
+<h3>Mes 2-3: Escala</h3>
+<div class="feature-card">
+  <strong>16. Separar server.js em modulos</strong> — indicators.js, alerts.js, apiClients.js, routes.js (manutencao).<br>
+  <strong>17. Database real</strong> — SQLite ou PostgreSQL no lugar de JSON files (concorrencia, queries).<br>
+  <strong>18. Sistema de usuarios</strong> — Login, planos VIP com Stripe, dashboard pessoal.<br>
+  <strong>19. Copy trading</strong> — Publicar sinais para seguidores com delay configuravel.<br>
+  <strong>20. Webhook para MetaTrader</strong> — Executar trades automaticamente no MT4/MT5 a partir dos sinais.
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>8. PRIORIDADES DE IMPLEMENTACAO</h2>
+
+<table>
+  <tr><th>#</th><th>Item</th><th>Esforco</th><th>Impacto</th><th>Prioridade</th></tr>
+  <tr><td>1</td><td>Revogar tokens + limpar Git</td><td>30min</td><td>Seguranca</td><td><span class="badge critical">URGENTE</span></td></tr>
+  <tr><td>2</td><td>Corrigir divergencia</td><td>20min</td><td>Sinais corretos</td><td><span class="badge critical">URGENTE</span></td></tr>
+  <tr><td>3</td><td>Corrigir backtester SHORT</td><td>1h</td><td>UX/confianca</td><td><span class="badge critical">URGENTE</span></td></tr>
+  <tr><td>4</td><td>Validacao de dados NaN</td><td>1h</td><td>Estabilidade</td><td><span class="badge high">ALTO</span></td></tr>
+  <tr><td>5</td><td>CORS restritivo</td><td>10min</td><td>Seguranca</td><td><span class="badge high">ALTO</span></td></tr>
+  <tr><td>6</td><td>Retry + backoff</td><td>2h</td><td>Resiliencia</td><td><span class="badge high">ALTO</span></td></tr>
+  <tr><td>7</td><td>MACD signal fix</td><td>30min</td><td>Precisao</td><td><span class="badge high">ALTO</span></td></tr>
+  <tr><td>8</td><td>Loading states</td><td>1h</td><td>UX</td><td><span class="badge medium">MEDIO</span></td></tr>
+  <tr><td>9</td><td>Remover arquivos desnecessarios</td><td>15min</td><td>Limpeza</td><td><span class="badge medium">MEDIO</span></td></tr>
+  <tr><td>10</td><td>Trade Journal</td><td>1 semana</td><td>Produto</td><td><span class="badge medium">MEDIO</span></td></tr>
+  <tr><td>11</td><td>Mais ativos (GBP, AUD, NAS)</td><td>2h</td><td>Produto</td><td><span class="badge medium">MEDIO</span></td></tr>
+  <tr><td>12</td><td>Modularizar server.js</td><td>4h</td><td>Manutencao</td><td><span class="badge low">BAIXO</span></td></tr>
+  <tr><td>13</td><td>Sistema de usuarios + Stripe</td><td>2 semanas</td><td>Monetizacao</td><td><span class="badge low">FUTURO</span></td></tr>
+  <tr><td>14</td><td>Webhook MetaTrader</td><td>1 semana</td><td>Automacao</td><td><span class="badge low">FUTURO</span></td></tr>
+</table>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>9. VEREDICTO FINAL</h2>
+
+<div class="card" style="border: 2px solid var(--accent);">
+  <p><strong>O projeto e viavel para producao?</strong> Sim, com ressalvas. A arquitetura e solida, os indicadores funcionam (com bugs pontuais), o sistema de fallback e profissional, e a integracao Telegram/calendario e um diferencial real.</p>
+
+  <p><strong>O que precisa ANTES de escalar:</strong></p>
+  <ul>
+    <li>Corrigir os 4 bugs criticos (2-3 horas de trabalho)</li>
+    <li>Revogar e regenerar todos os tokens expostos</li>
+    <li>Restringir CORS para o dominio de producao</li>
+    <li>Adicionar validacao de dados em todos os fetchers</li>
+  </ul>
+
+  <p><strong>Vale a pena continuar?</strong> Absolutamente. Comparado com plataformas pagas (3Commas a $49/mes, TradingView Pro a $60/mes), seu dashboard oferece sinais com confluencia multi-TF + alertas Telegram + calendario economico gratuitamente. Com as correcoes criticas + trade journal + mais ativos, voce tem um produto monetizavel.</p>
+
+  <p><strong>Diferencial competitivo:</strong> Nenhuma plataforma gratuita combina sinais de tendencia com filtro ADX + confluencia multi-TF + calendario economico + alertas Telegram + backtester. Esse e o nicho.</p>
+</div>
+
+<p style="color:var(--muted); font-size:0.8rem; margin-top:40px; text-align:center;">Gerado em Abril 2026 — Auditoria por Claude | Trading Dashboard v6.0.0</p>
+
+</div>
+</body>
+</html>

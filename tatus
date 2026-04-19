@@ -1,0 +1,133 @@
+warning: in the working copy of 'server.js', LF will be replaced by CRLF the next time Git touches it
+[1mdiff --git a/server.js b/server.js[m
+[1mindex 4ac75b4..0a78d09 100644[m
+[1m--- a/server.js[m
+[1m+++ b/server.js[m
+[36m@@ -1785,6 +1785,101 @@[m [mfunction hasBreakout(candles, direction, bars = 20) {[m
+   return false;[m
+ }[m
+ [m
+[32m+[m[32m/**[m
+[32m+[m[32m * FILTRO BÔNUS 1 — Inside Bar (Compressão)[m
+[32m+[m[32m * Detecta padrão de 3 velas: mãe → inside bar → confirmação de rompimento[m
+[32m+[m[32m *   candles[-3] = vela mãe (maior range)[m
+[32m+[m[32m *   candles[-2] = inside bar (contida dentro da mãe)[m
+[32m+[m[32m *   candles[-1] = confirmação (fecha acima da máxima da mãe em BUY, abaixo da mínima em SELL)[m
+[32m+[m[32m *[m
+[32m+[m[32m * Por que funciona: inside bar = compressão de volatilidade. O mercado "respira" antes de[m
+[32m+[m[32m * uma decisão direcional. Quando o preço rompe a mãe com confirmação de fechamento,[m
+[32m+[m[32m * o movimento tende a ser mais limpo que um breakout simples de 30 períodos.[m
+[32m+[m[32m */[m
+[32m+[m[32mfunction hasInsideBar(candles, direction) {[m
+[32m+[m[32m  if (candles.length < 3) return false;[m
+[32m+[m[32m  const mother  = candles[candles.length - 3];[m
+[32m+[m[32m  const inside  = candles[candles.length - 2];[m
+[32m+[m[32m  const confirm = candles[candles.length - 1];[m
+[32m+[m
+[32m+[m[32m  // inside bar deve estar totalmente contida dentro da vela mãe[m
+[32m+[m[32m  const isInsideBar = inside.high <= mother.high && inside.low >= mother.low;[m
+[32m+[m[32m  if (!isInsideBar) return false;[m
+[32m+[m
+[32m+[m[32m  // confirmação deve fechar além do range da mãe na direção correta[m
+[32m+[m[32m  if (direction === 'BUY')  return confirm.close > mother.high;[m
+[32m+[m[32m  if (direction === 'SELL') return confirm.close < mother.low;[m
+[32m+[m[32m  return false;[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32m/**[m
+[32m+[m[32m * FILTRO BÔNUS 2 — Confirmação de Volume[m
+[32m+[m[32m * Verifica se o volume da vela atual está acima da média dos últimos 20 períodos.[m
+[32m+[m[32m * Retorna null se não houver dados de volume disponíveis (sem penalidade).[m
+[32m+[m[32m *[m
+[32m+[m[32m * Por que importa: breakout com volume alto = mercado participando da direção.[m
+[32m+[m[32m * Breakout com volume fraco = maior probabilidade de false breakout.[m
+[32m+[m[32m * Para forex spot o volume é tick volume (proxy), mas ainda tem valor relativo.[m
+[32m+[m[32m */[m
+[32m+[m[32mfunction hasVolumeConfirmation(candles, multiplier = 1.1) {[m
+[32m+[m[32m  if (candles.length < 21) return null;[m
+[32m+[m[32m  const current = candles[candles.length - 1];[m
+[32m+[m[32m  if (!current.volume || current.volume === 0) return null;  // sem dados → sem penalidade[m
+[32m+[m[32m  const lookback = candles.slice(-21, -1);[m
+[32m+[m[32m  const avgVol = lookback.reduce((sum, c) => sum + (c.volume || 0), 0) / lookback.length;[m
+[32m+[m[32m  if (avgVol === 0) return null;[m
+[32m+[m[32m  return current.volume >= avgVol * multiplier;[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32m/**[m
+[32m+[m[32m * FILTRO BÔNUS 3 — Bollinger Band Squeeze[m
+[32m+[m[32m * Detecta compressão das Bollinger Bands: largura atual abaixo de 85% da média[m
+[32m+[m[32m * dos últimos 20 cálculos. Indica mercado em consolidação antes de expansão.[m
+[32m+[m[32m *[m
+[32m+[m[32m * Por que funciona: squeeze + breakout = setup de maior qualidade.[m
+[32m+[m[32m * O mercado "carrega energia" durante a compressão e libera no rompimento.[m
+[32m+[m[32m * Especialmente relevante para EUR/USD (alta liquidez + padrões técnicos limpos).[m
+[32m+[m[32m */[m
+[32m+[m[32mfunction hasBollingerSqueeze(closes, period = 20, lookbackWindows = 20) {[m
+[32m+[m[32m  if (closes.length < period + lookbackWindows) return false;[m
+[32m+[m
+[32m+[m[32m  const widths = [];[m
+[32m+[m[32m  // Calcula largura normalizada da BB para as últimas lookbackWindows+1 janelas[m
+[32m+[m[32m  for (let i = 0; i <= lookbackWindows; i++) {[m
+[32m+[m[32m    const end   = closes.length - i;[m
+[32m+[m[32m    const start = end - period;[m
+[32m+[m[32m    if (start < 0) break;[m
+[32m+[m[32m    const slice = closes.slice(start, end);[m
+[32m+[m[32m    const sma   = slice.reduce((a, b) => a + b, 0) / period;[m
+[32m+[m[32m    if (sma === 0) { widths.push(0); continue; }[m
+[32m+[m[32m    const variance = slice.reduce((a, b) => a + Math.pow(b - sma, 2), 0) / period;[m
+[32m+[m[32m    const std = Math.sqrt(variance);[m
+[32m+[m[32m    widths.push((4 * std) / sma);  // largura normalizada como % do preço[m
+[32m+[m[32m  }[m
+[32m+[m
+[32m+[m[32m  if (widths.length < 2) return false;[m
+[32m+[m[32m  const currentWidth = widths[0];  // i=0 → janela mais recente[m
+[32m+[m[32m  const avgWidth = widths.slice(1).reduce((a, b) => a + b, 0) / (widths.length - 1);[m
+[32m+[m
+[32m+[m[32m  // Squeeze: largura atual pelo menos 15% abaixo da média recente[m
+[32m+[m[32m  return currentWidth > 0 && avgWidth > 0 && currentWidth < avgWidth * 0.85;[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32m/**[m
+[32m+[m[32m * CONTEXTO MACRO — EMA 200 (XAU/USD)[m
+[32m+[m[32m * Calcula EMA 200 e verifica se o preço está do lado correto para a direção.[m
+[32m+[m[32m * Retorna null se dados insuficientes.[m
+[32m+[m[32m * Não pontua no score — aparece como contexto operacional (aviso ou confirmação).[m
+[32m+[m[32m */[m
+[32m+[m[32mfunction getEma200Context(candles, direction) {[m
+[32m+[m[32m  if (!candles || candles.length < 200) return null;[m
+[32m+[m[32m  const closes = candles.map(c => c.close);[m
+[32m+[m[32m  const ema200 = calcEMA(closes, 200);[m
+[32m+[m[32m  const price  = closes[closes.length - 1];[m
+[32m+[m[32m  const aligned = direction === 'BUY' ? price > ema200 : price < ema200;[m
+[32m+[m[32m  return { ema200: parseFloat(ema200.toFixed(2)), aligned };[m
+[32m+[m[32m}[m
+[32m+[m
+ /**[m
+  * Determina o viés direcional (BUY/SELL/NEUTRAL) baseado nas EMAs 9/20/50[m
+  */[m
+[36m@@ -1883,12 +1978,39 @@[m [masync function computeVipSignal(assetKey, entryTf = '15m', biasTf = '1h', { skip[m
+   const newsInfo = getNewsStatus(assetKey);[m
+   const newsBlocked = newsInfo.isNearNews;[m
+ [m
+[31m-  // Score: ema(2) + breakout(2) + adx(2) + session(1) = máx 7[m
+[32m+[m[32m  // ── FILTROS BÔNUS ─────────────────────────────────────────────────────────[m
+[32m+[m[32m  // Cada bônus vale +1 ponto (aditivos ao score base de 7)[m
+[32m+[m[32m  // Permite atingir VALID_SIGNAL (≥7) mesmo sem um filtro base, se bônus compensam[m
+[32m+[m
+[32m+[m[32m  // BÔNUS 1: Inside Bar — compressão antes do rompimento[m
+[32m+[m[32m  const filterInsideBar = hasInsideBar(entryCandles, direction);[m
+[32m+[m
+[32m+[m[32m  // BÔNUS 2: Volume de confirmação — vela atual acima da média 20 períodos[m
+[32m+[m[32m  // null = sem dados de volume → neutro (não penaliza nem pontua)[m
+[32m+[m[32m  const volumeConfirmed = hasVolumeConfirmation(entryCandles);[m
+[32m+[m[32m  const filterVolume = volumeConfirmed === true;  // só pontua se confirmado explicitamente[m
+[32m+[m
+[32m+[m[32m  // BÔNUS 3: Bollinger Band Squeeze — compressão das bandas antes do breakout[m
+[32m+[m[32m  const entryCloses = closes;  // já calculado acima[m
+[32m+[m[32m  const filterBBSqueeze = hasBollingerSqueeze(entryCloses);[m
+[32m+[m
+[32m+[m[32m  // CONTEXTO MACRO: EMA 200 para XAU/USD (sem pontuação — só contexto/aviso)[m
+[32m+[m[32m  const ema200Ctx = assetKey === 'xauusd' ? getEma200Context(entryCandles, direction) : null;[m
+[32m+[m
+[32m+[m[32m  // Score: ema(2) + breakout(2) + adx(2) + session(1) = base 7[m
+[32m+[m[32m  // Bônus: insideBar(+1) + volume(+1) + bbSqueeze(+1) = até +3 → máx 10[m
