@@ -135,6 +135,93 @@
     .btn-refresh:hover { opacity: .85; }
     .btn-refresh:disabled { opacity: .5; cursor: default; }
     .last-update { color: var(--muted); font-size: 12px; }
+    .auth-actions { display:flex; align-items:center; gap:10px; margin-left:auto; }
+    .auth-chip {
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding:7px 12px;
+      border-radius:999px;
+      border:1px solid rgba(240,180,41,.28);
+      background:rgba(240,180,41,.08);
+      color:var(--gold);
+      font-size:11px;
+      font-weight:700;
+      white-space:nowrap;
+    }
+    .auth-chip.ok { border-color: rgba(38,166,154,.35); color: var(--green); background: rgba(38,166,154,.08); }
+    .auth-chip.missing { border-color: rgba(239,83,80,.25); color: var(--red); background: rgba(239,83,80,.08); }
+    .btn-auth {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 7px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .btn-auth.primary { background: linear-gradient(135deg,var(--gold-dim),var(--gold)); color:#000; border:none; }
+    .btn-auth.danger { border-color: rgba(239,83,80,.25); color: var(--red); }
+    .btn-auth:hover { opacity: .88; }
+    .auth-panel {
+      display:grid;
+      grid-template-columns: 1.1fr .9fr;
+      gap:14px;
+      align-items:stretch;
+      background: linear-gradient(135deg, rgba(240,180,41,.08), rgba(255,255,255,.02));
+    }
+    .auth-panel.hidden { display:none; }
+    .auth-copy { display:flex; flex-direction:column; gap:10px; justify-content:center; }
+    .auth-kicker { font-size:11px; text-transform:uppercase; letter-spacing:.9px; color:var(--gold); }
+    .auth-title { font-size:24px; font-weight:800; color:var(--text); }
+    .auth-text { color:var(--muted); line-height:1.6; font-size:13px; }
+    .auth-user-meta { display:flex; gap:8px; flex-wrap:wrap; }
+    .auth-pill {
+      padding:5px 10px;
+      border-radius:999px;
+      background:rgba(255,255,255,.04);
+      border:1px solid var(--border);
+      color:var(--muted);
+      font-size:11px;
+    }
+    .auth-form {
+      background: rgba(0,0,0,.16);
+      border:1px solid var(--border);
+      border-radius:12px;
+      padding:16px;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+    }
+    .auth-form h3 { font-size:15px; color:var(--text); }
+    .auth-form p { color:var(--muted); font-size:12px; line-height:1.5; }
+    .auth-form input {
+      width:100%;
+      background:var(--surface);
+      border:1px solid var(--border);
+      color:var(--text);
+      padding:10px 12px;
+      border-radius:8px;
+      font-size:13px;
+    }
+    .auth-form input:focus { outline:none; border-color:var(--gold); }
+    .auth-row { display:flex; gap:10px; flex-wrap:wrap; }
+    .auth-row > * { flex:1; min-width:160px; }
+    .auth-msg { min-height:18px; font-size:12px; color:var(--muted); }
+    .auth-msg.ok { color:var(--green); }
+    .auth-msg.err { color:var(--red); }
+    .vip-shell.locked .scanner-strip,
+    .vip-shell.locked .container {
+      opacity:.35;
+      pointer-events:none;
+      filter:grayscale(.18);
+    }
+    .vip-shell.locked .auth-panel {
+      opacity:1;
+      pointer-events:auto;
+      filter:none;
+    }
 
     /* ── CARDS ── */
     .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
@@ -157,6 +244,8 @@
       .equity-chart-wrap canvas { max-height: 200px !important; }
       #tabJournalContent > div:nth-child(2) { grid-template-columns: 1fr !important; }
       #journalStreaks > div { grid-template-columns: 1fr 1fr !important; }
+      .auth-panel { grid-template-columns: 1fr; }
+      .auth-actions { width:100%; margin-left:0; justify-content:space-between; }
     }
 
     @media (max-width: 480px) {
@@ -320,7 +409,7 @@
     .pulse { animation: pulse-green 1.8s ease-in-out infinite; }
   </style>
 </head>
-<body>
+<body class="vip-shell locked">
 
 <!-- NAV -->
 <header class="topbar">
@@ -330,6 +419,10 @@
     <a href="backtester.html">🔬 Backtester</a>
     <a href="vip.html" class="active">⭐ VIP</a>
   </nav>
+  <div class="auth-actions">
+    <div class="auth-chip missing" id="authStatusChip">Bloqueado</div>
+    <button class="btn-auth danger" id="btnLogout" onclick="logoutVip()" style="display:none">Sair</button>
+  </div>
 </header>
 
 <!-- SCANNER STRIP -->
@@ -392,6 +485,42 @@
 
 <!-- MAIN -->
 <div class="container">
+
+  <div class="card auth-panel" id="authPanel">
+    <div class="auth-copy">
+      <div class="auth-kicker">Acesso VIP</div>
+      <div class="auth-title" id="authTitle">Entre para liberar a area premium</div>
+      <div class="auth-text" id="authText">Use sua conta para acessar sinais VIP, scanner, trades e historico. O token legado continua funcionando enquanto a migracao nao termina.</div>
+      <div class="auth-user-meta" id="authUserMeta">
+        <span class="auth-pill">Login com sessao persistente</span>
+        <span class="auth-pill">Plano controla acesso VIP</span>
+        <span class="auth-pill">Fallback do token antigo mantido</span>
+      </div>
+    </div>
+    <div class="auth-form" id="loginFormCard">
+      <h3>Login</h3>
+      <p>Entre com email e senha. Se voce ainda usa o token antigo, cole-o abaixo.</p>
+      <div class="auth-row">
+        <div>
+          <input type="email" id="authEmail" placeholder="seu@email.com" autocomplete="email" />
+        </div>
+        <div>
+          <input type="password" id="authPassword" placeholder="Sua senha" autocomplete="current-password" />
+        </div>
+      </div>
+      <div class="auth-row">
+        <button class="btn-auth primary" onclick="submitLogin()">Entrar</button>
+        <button class="btn-auth" onclick="toggleLegacyToken()">Usar token antigo</button>
+      </div>
+      <div id="legacyTokenWrap" style="display:none">
+        <input type="text" id="legacyTokenInput" placeholder="Cole aqui o VIP_TOKEN antigo" />
+        <div style="margin-top:10px">
+          <button class="btn-auth" onclick="submitLegacyToken()">Conectar token</button>
+        </div>
+      </div>
+      <div class="auth-msg" id="authMsg"></div>
+    </div>
+  </div>
 
   <!-- CONTROLS -->
   <div class="controls">
@@ -574,6 +703,9 @@ let countdownTimer = null;
 let countdownSec = 900;
 let equityChartInstance = null;
 let vipToken = '';
+let vipAuthType = 'none';
+let vipUser = null;
+let authConfig = null;
 const AUTO_REFRESH_SEC = 900; // 15 minutos — alinhado com CACHE_TTL_MS do servidor
 
 // ── UTILS ──
@@ -600,21 +732,243 @@ function fmtCountdown(sec) {
 }
 
 // ── SCANNER ──
+function getStoredSessionToken() {
+  return (localStorage.getItem('vip_session_token') || '').trim();
+}
+
+function getStoredLegacyToken() {
+  return (localStorage.getItem('vip_token') || '').trim();
+}
+
+function setStoredSessionToken(token) {
+  if (token) localStorage.setItem('vip_session_token', token);
+  else localStorage.removeItem('vip_session_token');
+}
+
+function setStoredLegacyToken(token) {
+  if (token) localStorage.setItem('vip_token', token);
+  else localStorage.removeItem('vip_token');
+}
+
 function getVipToken() {
   if (vipToken) return vipToken;
   const params = new URLSearchParams(window.location.search);
   const fromQuery = (params.get('token') || '').trim();
-  const fromStorage = (localStorage.getItem('vip_token') || '').trim();
-  vipToken = fromQuery || fromStorage;
-  if (fromQuery && fromQuery !== fromStorage) localStorage.setItem('vip_token', fromQuery);
+  const fromSession = getStoredSessionToken();
+  const fromLegacy = getStoredLegacyToken();
+  if (fromQuery && !fromLegacy && !fromSession) {
+    setStoredLegacyToken(fromQuery);
+  }
+  vipToken = fromSession || fromQuery || fromLegacy;
+  vipAuthType = fromSession ? 'session' : (vipToken ? 'legacy' : 'none');
   return vipToken;
+}
+
+function clearVipAuthStorage() {
+  vipToken = '';
+  vipAuthType = 'none';
+  vipUser = null;
+  setStoredSessionToken('');
+  setStoredLegacyToken('');
+}
+
+function setVipAppLocked(locked) {
+  document.body.classList.toggle('locked', locked);
+}
+
+function setAuthMessage(message = '', type = '') {
+  const el = document.getElementById('authMsg');
+  if (!el) return;
+  el.className = `auth-msg${type ? ' ' + type : ''}`;
+  el.textContent = message;
 }
 
 function updateVipTokenBadge() {
   const badge = document.getElementById('vipTokenStatus');
+  const authChip = document.getElementById('authStatusChip');
+  const logoutBtn = document.getElementById('btnLogout');
   const hasToken = !!getVipToken();
-  badge.className = `token-chip ${hasToken ? 'ok' : 'missing'}`;
-  badge.textContent = hasToken ? '🔐 Token VIP conectado' : '🔐 Token VIP ausente';
+  const hasVip = !!vipUser?.hasVipAccess;
+  const loggedIn = !!vipUser;
+  const planLabel = vipUser?.planCode ? String(vipUser.planCode).toUpperCase() : 'SEM PLANO';
+  const accessLabel = vipUser?.accessStatus ? String(vipUser.accessStatus).toUpperCase() : 'LOCKED';
+
+  badge.className = `token-chip ${loggedIn ? 'ok' : hasToken ? 'ok' : 'missing'}`;
+  badge.textContent = loggedIn
+    ? `🔐 ${vipAuthType === 'legacy_token' || vipAuthType === 'legacy' ? 'Token legado' : 'Sessao ativa'} · ${planLabel}`
+    : hasToken
+      ? '🔐 Credencial conectada'
+      : '🔐 Login necessario';
+
+  authChip.className = `auth-chip ${loggedIn && hasVip ? 'ok' : 'missing'}`;
+  authChip.textContent = loggedIn
+    ? `${hasVip ? 'Liberado' : 'Sem VIP'} · ${accessLabel}`
+    : 'Bloqueado';
+
+  logoutBtn.style.display = loggedIn ? '' : 'none';
+}
+
+function renderAuthPanel() {
+  const panel = document.getElementById('authPanel');
+  const title = document.getElementById('authTitle');
+  const text = document.getElementById('authText');
+  const meta = document.getElementById('authUserMeta');
+  const form = document.getElementById('loginFormCard');
+  const loggedIn = !!vipUser;
+  const hasVip = !!vipUser?.hasVipAccess;
+
+  if (!panel || !title || !text || !meta || !form) return;
+
+  if (!loggedIn) {
+    panel.classList.remove('hidden');
+    title.textContent = 'Entre para liberar a area premium';
+    text.textContent = 'Use sua conta para acessar sinais VIP, scanner, trades e historico. O token legado continua funcionando enquanto a migracao nao termina.';
+    meta.innerHTML = '<span class="auth-pill">Login com sessao persistente</span><span class="auth-pill">Plano controla acesso VIP</span><span class="auth-pill">Fallback do token antigo mantido</span>';
+    form.style.display = '';
+    return;
+  }
+
+  title.textContent = hasVip ? 'Area VIP liberada' : 'Conta conectada, mas sem acesso VIP';
+  text.textContent = hasVip
+    ? `Voce entrou como ${vipUser.email}. A sessao permanece salva neste navegador.`
+    : `Voce entrou como ${vipUser.email}, mas seu plano atual nao libera a area VIP.`;
+  meta.innerHTML = `
+    <span class="auth-pill">Plano: ${sanitize(vipUser.planCode || 'free')}</span>
+    <span class="auth-pill">Status: ${sanitize(vipUser.accessStatus || 'inactive')}</span>
+    <span class="auth-pill">Perfil: ${sanitize(vipUser.role || 'subscriber')}</span>
+  `;
+  form.style.display = hasVip ? 'none' : '';
+  panel.classList.toggle('hidden', hasVip);
+}
+
+async function fetchAuthConfig() {
+  try {
+    const res = await fetch('/api/auth/config');
+    authConfig = await res.json();
+  } catch (_) {
+    authConfig = null;
+  }
+}
+
+async function restoreVipSession() {
+  getVipToken();
+  updateVipTokenBadge();
+  renderAuthPanel();
+
+  const token = getVipToken();
+  if (!token) {
+    setVipAppLocked(true);
+    return false;
+  }
+
+  try {
+    const res = await fetch('/api/auth/me', {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const payload = await res.json();
+    if (!res.ok || !payload?.success || !payload?.user) {
+      throw new Error(payload?.error || 'Sessao invalida');
+    }
+
+    vipUser = payload.user;
+    vipAuthType = payload.authType || vipAuthType;
+    if (vipAuthType === 'session') setStoredSessionToken(token);
+    else setStoredLegacyToken(token);
+    setVipAppLocked(!vipUser.hasVipAccess);
+    updateVipTokenBadge();
+    renderAuthPanel();
+    if (!vipUser.hasVipAccess) {
+      setAuthMessage('Sua conta foi reconhecida, mas ainda nao tem acesso VIP.', 'err');
+      return false;
+    }
+    setAuthMessage('');
+    return true;
+  } catch (err) {
+    clearVipAuthStorage();
+    updateVipTokenBadge();
+    renderAuthPanel();
+    setVipAppLocked(true);
+    setAuthMessage(err.message || 'Nao foi possivel validar a sessao.', 'err');
+    return false;
+  }
+}
+
+async function submitLogin() {
+  const email = document.getElementById('authEmail').value.trim();
+  const password = document.getElementById('authPassword').value;
+  if (!email || !password) {
+    setAuthMessage('Preencha email e senha.', 'err');
+    return;
+  }
+
+  setAuthMessage('Entrando...', '');
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    const payload = await res.json();
+    if (!res.ok || !payload?.success || !payload?.session?.token) {
+      throw new Error(payload?.error || 'Falha no login');
+    }
+
+    vipToken = payload.session.token;
+    vipAuthType = 'session';
+    setStoredSessionToken(vipToken);
+    setStoredLegacyToken('');
+    setAuthMessage('Login realizado. Carregando area VIP...', 'ok');
+    const ok = await restoreVipSession();
+    if (ok) {
+      await refreshAll();
+      startCountdown();
+    }
+  } catch (err) {
+    setAuthMessage(err.message || 'Falha no login', 'err');
+  }
+}
+
+function toggleLegacyToken() {
+  const wrap = document.getElementById('legacyTokenWrap');
+  if (!wrap) return;
+  wrap.style.display = wrap.style.display === 'none' ? '' : 'none';
+}
+
+async function submitLegacyToken() {
+  const token = document.getElementById('legacyTokenInput').value.trim();
+  if (!token) {
+    setAuthMessage('Cole o token legado para continuar.', 'err');
+    return;
+  }
+
+  vipToken = token;
+  vipAuthType = 'legacy';
+  setStoredLegacyToken(token);
+  setStoredSessionToken('');
+  setAuthMessage('Validando token legado...', '');
+  const ok = await restoreVipSession();
+  if (ok) {
+    await refreshAll();
+    startCountdown();
+  }
+}
+
+async function logoutVip() {
+  try {
+    if (vipAuthType === 'session' && getVipToken()) {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${getVipToken()}` }
+      });
+    }
+  } catch (_) {
+    // ignore
+  }
+  clearVipAuthStorage();
+  updateVipTokenBadge();
+  renderAuthPanel();
+  setVipAppLocked(true);
+  setAuthMessage('Sessao encerrada.', 'ok');
 }
 
 async function vipFetch(url, options = {}) {
@@ -623,9 +977,14 @@ async function vipFetch(url, options = {}) {
   if (token) headers.Authorization = `Bearer ${token}`;
 
   const response = await fetch(url, { ...options, headers });
-  if (response.status === 401 || response.status === 503) {
+  if (response.status === 401 || response.status === 403 || response.status === 503) {
     let payload = null;
     try { payload = await response.clone().json(); } catch (_) { /* ignore */ }
+    if (response.status === 401 || response.status === 403) {
+      setVipAppLocked(true);
+      renderAuthPanel();
+      updateVipTokenBadge();
+    }
     throw new Error(payload?.detail || payload?.error || `HTTP ${response.status}`);
   }
   return response;
@@ -1485,8 +1844,12 @@ function switchTab(tab) {
 
 // ── INIT ──
 (async function init() {
+  await fetchAuthConfig();
   updateVipTokenBadge();
+  renderAuthPanel();
   syncScannerSelection();
+  const hasAccess = await restoreVipSession();
+  if (!hasAccess) return;
   await Promise.all([loadSignal(), runScan(), loadTrades()]);
   startCountdown();
 })();

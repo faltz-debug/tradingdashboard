@@ -5,6 +5,7 @@ const axios     = require('axios');
 const fs        = require('fs');
 const path      = require('path');
 const WebSocket = require('ws');
+const authStore = require('./authStore');
 
 // Fonte única de verdade para parâmetros do Master Signal
 // (compartilhado com backtester.html e dashboard.html via /signal-config.js)
@@ -35,7 +36,7 @@ app.use(cors({
     }
     callback(new Error('Blocked by CORS'));
   },
-  methods: ['GET', 'POST'],
+  methods: ['GET', 'POST', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
@@ -45,7 +46,7 @@ app.use(express.json());
 // O setHeaders vinha depois do match e causava ERR_HTTP_HEADERS_SENT.
 // Middleware de bloqueio explícito resolve isso sem crash.
 const BLOCKED_PATHS = new Set([
-  '/server.js', '/tradestore.js',
+  '/server.js', '/tradestore.js', '/authstore.js',
   '/package.json', '/package-lock.json',
   '/start.sh', '/start.bat',
   '/.gitignore', '/.env',
@@ -76,6 +77,13 @@ const TWELVE_DATA_KEY  = process.env.TWELVE_DATA_KEY  || 'COLE_SUA_CHAVE_AQUI';
 const TELEGRAM_TOKEN   = process.env.TELEGRAM_TOKEN   || '';
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
 const VIP_TOKEN        = process.env.VIP_TOKEN        || '';
+const ALLOW_PUBLIC_SIGNUP = process.env.ALLOW_PUBLIC_SIGNUP === 'true';
+const DEFAULT_SIGNUP_ACCESS_STATUS = process.env.DEFAULT_SIGNUP_ACCESS_STATUS || 'trial';
+const DEFAULT_SIGNUP_PLAN_CODE = process.env.DEFAULT_SIGNUP_PLAN_CODE || 'starter';
+const ADMIN_EMAIL      = process.env.ADMIN_EMAIL      || '';
+const ADMIN_PASSWORD   = process.env.ADMIN_PASSWORD   || '';
+const ADMIN_NAME       = process.env.ADMIN_NAME       || 'Admin';
+const ADMIN_TELEGRAM   = process.env.ADMIN_TELEGRAM   || '';
 const AUTO_BLOCK_WEAK_CONTEXT = process.env.AUTO_BLOCK_WEAK_CONTEXT !== 'false';
 const CACHE_TTL_MS     = 15 * 60 * 1000;   // 15 minutos (fallback Twelve Data)
 
@@ -1597,28 +1605,123 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000);
 
-// ===== AUTENTICAÇÃO VIP =====
-// Protege todas as rotas /api/vip/* com token via header ou query string
-// Header:       Authorization: Bearer SEU_TOKEN
-// Query string: ?token=SEU_TOKEN
-// Se VIP_TOKEN não estiver configurado no .env, acesso é bloqueado por segurança
-function vipAuth(req, res, next) {
-  if (!VIP_TOKEN) {
-    return res.status(503).json({
-      error: 'VIP não configurado',
-      detail: 'Configure VIP_TOKEN nas variáveis de ambiente do Railway'
-    });
-  }
-  const header = req.headers['authorization'] || '';
-  const tokenFromHeader = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
-  const tokenFromQuery  = req.query.token || '';
-  const provided = tokenFromHeader || tokenFromQuery;
+// ===== AUTENTICACAO / AUTORIZACAO =====
+function getRequestIp(req) {
+  return req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket.remoteAddress || 'unknown';
+}
 
-  if (!provided || provided !== VIP_TOKEN) {
-    return res.status(401).json({ error: 'Token inválido ou ausente' });
+function getRequestToken(req) {
+  const header = req.headers['authorization'] || '';
+  const bearer = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+  const queryToken = typeof req.query?.token === 'string' ? req.query.token.trim() : '';
+  return bearer || queryToken || '';
+}
+
+function buildPublicUser(user) {
+  if (!user) return null;
+  return {
+    id: user.id,
+    email: user.email,
+    role: user.role,
+    accessStatus: user.accessStatus,
+    planCode: user.planCode,
+    hasVipAccess: !!user.hasVipAccess,
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt,
+    lastLoginAt: user.lastLoginAt,
+    profile: user.profile || {},
+    sessionExpiresAt: user.sessionExpiresAt || null,
+  };
+}
+
+function authenticateRequest(req, _res, next) {
+  const token = getRequestToken(req);
+  req.auth = null;
+
+  if (!token) return next();
+
+  if (VIP_TOKEN && token === VIP_TOKEN) {
+    req.auth = {
+      type: 'legacy_token',
+      role: 'subscriber',
+      hasVipAccess: true,
+      user: {
+        id: 'legacy-vip-token',
+        email: 'legacy-token@local',
+        role: 'subscriber',
+        accessStatus: 'active',
+        planCode: 'legacy',
+        hasVipAccess: true,
+        profile: { name: 'Legacy VIP Token' },
+      }
+    };
+    return next();
+  }
+
+  const user = authStore.getUserBySessionToken(token);
+  if (user) {
+    req.auth = {
+      type: 'session',
+      role: user.role,
+      hasVipAccess: !!user.hasVipAccess,
+      user,
+      token,
+    };
+  }
+
+  next();
+}
+
+function requireAuth(req, res, next) {
+  if (!req.auth?.user) {
+    return res.status(401).json({ success: false, error: 'Autenticacao obrigatoria' });
   }
   next();
 }
+
+function requireAdmin(req, res, next) {
+  if (!req.auth?.user || req.auth.role !== 'admin') {
+    return res.status(403).json({ success: false, error: 'Acesso restrito a admin' });
+  }
+  next();
+}
+
+function requireVipAccess(req, res, next) {
+  if (!req.auth?.user) {
+    return res.status(401).json({ success: false, error: 'Autenticacao obrigatoria' });
+  }
+  if (req.auth.role === 'admin' || req.auth.hasVipAccess) return next();
+  return res.status(403).json({
+    success: false,
+    error: 'Plano sem acesso VIP',
+    detail: 'Ative um plano com acesso VIP para usar esta rota',
+  });
+}
+
+function bootstrapAdminAccount() {
+  if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
+    logger.info('Bootstrap admin desativado - defina ADMIN_EMAIL e ADMIN_PASSWORD para criar o primeiro admin');
+    return;
+  }
+
+  try {
+    const admin = authStore.ensureBootstrapAdmin({
+      email: ADMIN_EMAIL,
+      password: ADMIN_PASSWORD,
+      name: ADMIN_NAME,
+      telegramHandle: ADMIN_TELEGRAM,
+      planCode: 'vip',
+    });
+
+    if (admin) {
+      logger.info(`Bootstrap admin pronto: ${admin.email} (${admin.role}/${admin.accessStatus})`);
+    }
+  } catch (err) {
+    logger.error(`Falha ao bootstrapar admin: ${err.message}`);
+  }
+}
+
+app.use(authenticateRequest);
 
 // ===== SINAIS NA RESPOSTA DA API =====
 // Computa e anexa sinais ao payload antes de devolver ao frontend
@@ -1709,6 +1812,32 @@ async function computeVipSignal(assetKey, entryTf = '15m', biasTf = '1h', { skip
   const biasKey  = TF_MAP[biasTf]  || '1h';
 
   const data = await getAsset(assetKey);
+  if (data.isSimulation) {
+    return {
+      success: false,
+      asset: assetKey,
+      biasTf,
+      entryTf,
+      status: 'SIMULATION_BLOCKED',
+      reason: 'Sinal VIP indisponivel com dados simulados',
+      filters: { emaAligned: false, breakout20: false, adxOk: false, sessionOk: false, newsBlocked: false },
+      levels: null,
+      meta: { reason: 'Fonte de dados em simulacao' },
+    };
+  }
+  if (data.isMarketClosed) {
+    return {
+      success: false,
+      asset: assetKey,
+      biasTf,
+      entryTf,
+      status: 'MARKET_CLOSED',
+      reason: 'Sinal VIP indisponivel com mercado fechado',
+      filters: { emaAligned: false, breakout20: false, adxOk: false, sessionOk: false, newsBlocked: false },
+      levels: null,
+      meta: { reason: 'Mercado fechado' },
+    };
+  }
   const entryCandles = data[entryKey] || [];
   const biasCandles  = data[biasKey]  || [];
 
@@ -1919,9 +2048,179 @@ async function computeVipSignal(assetKey, entryTf = '15m', biasTf = '1h', { skip
   return result;
 }
 
+// ===== ROTAS AUTH / ADMIN =====
+
+app.get('/api/auth/config', rateLimit, (_req, res) => {
+  res.json({
+    success: true,
+    allowPublicSignup: ALLOW_PUBLIC_SIGNUP,
+    hasLegacyVipToken: !!VIP_TOKEN,
+    usersCount: authStore.countUsers(),
+    defaultSignupAccessStatus: DEFAULT_SIGNUP_ACCESS_STATUS,
+    defaultSignupPlanCode: DEFAULT_SIGNUP_PLAN_CODE,
+  });
+});
+
+app.post('/api/auth/register', rateLimit, (req, res) => {
+  if (!ALLOW_PUBLIC_SIGNUP) {
+    return res.status(403).json({
+      success: false,
+      error: 'Cadastro publico desabilitado',
+      detail: 'Ative ALLOW_PUBLIC_SIGNUP=true para liberar auto-cadastro',
+    });
+  }
+
+  const { email, password, name, telegramHandle } = req.body || {};
+
+  try {
+    const user = authStore.createUser({
+      email,
+      password,
+      role: 'subscriber',
+      accessStatus: DEFAULT_SIGNUP_ACCESS_STATUS,
+      planCode: DEFAULT_SIGNUP_PLAN_CODE,
+      profile: { name, telegramHandle, createdVia: 'public_signup' },
+    });
+
+    const session = authStore.createSession(user.id, {
+      ip: getRequestIp(req),
+      userAgent: req.headers['user-agent'] || '',
+    });
+
+    res.status(201).json({
+      success: true,
+      user: buildPublicUser({ ...user, sessionExpiresAt: session.expiresAt }),
+      session: {
+        token: session.token,
+        expiresAt: session.expiresAt,
+      },
+    });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/auth/login', rateLimit, (req, res) => {
+  const { email, password } = req.body || {};
+  const user = authStore.authenticateUser(email, password);
+  if (!user) {
+    return res.status(401).json({ success: false, error: 'Email ou senha invalidos' });
+  }
+
+  const session = authStore.createSession(user.id, {
+    ip: getRequestIp(req),
+    userAgent: req.headers['user-agent'] || '',
+  });
+
+  res.json({
+    success: true,
+    user: buildPublicUser({ ...user, sessionExpiresAt: session.expiresAt }),
+    session: {
+      token: session.token,
+      expiresAt: session.expiresAt,
+    },
+  });
+});
+
+app.post('/api/auth/logout', rateLimit, requireAuth, (req, res) => {
+  if (req.auth.type === 'session' && req.auth.token) {
+    authStore.revokeSession(req.auth.token);
+  }
+  res.json({ success: true });
+});
+
+app.get('/api/auth/me', rateLimit, requireAuth, (req, res) => {
+  res.json({
+    success: true,
+    user: buildPublicUser(req.auth.user),
+    authType: req.auth.type,
+  });
+});
+
+app.get('/api/admin/users', rateLimit, requireAdmin, (req, res) => {
+  const { accessStatus, role, limit } = req.query;
+  const users = authStore.listUsers({
+    accessStatus: accessStatus ? String(accessStatus) : undefined,
+    role: role ? String(role) : undefined,
+    limit: parseInt(limit, 10) || 100,
+  });
+  res.json({ success: true, count: users.length, users });
+});
+
+app.post('/api/admin/users', rateLimit, requireAdmin, (req, res) => {
+  const {
+    email,
+    password,
+    role = 'subscriber',
+    accessStatus = 'active',
+    planCode = 'vip',
+    name,
+    telegramHandle,
+    notes,
+  } = req.body || {};
+
+  try {
+    const user = authStore.createUser({
+      email,
+      password,
+      role,
+      accessStatus,
+      planCode,
+      profile: { name, telegramHandle, notes, createdVia: 'admin' },
+    });
+    res.status(201).json({ success: true, user: buildPublicUser(user) });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+app.patch('/api/admin/users/:id', rateLimit, requireAdmin, (req, res) => {
+  const { id } = req.params;
+  const {
+    email,
+    password,
+    role,
+    accessStatus,
+    planCode,
+    name,
+    telegramHandle,
+    notes,
+    revokeSessions,
+  } = req.body || {};
+
+  try {
+    const updated = authStore.updateUser(id, {
+      email,
+      password,
+      role,
+      accessStatus,
+      planCode,
+      profile: { name, telegramHandle, notes },
+    });
+
+    if (!updated) {
+      return res.status(404).json({ success: false, error: 'Usuario nao encontrado' });
+    }
+
+    if (revokeSessions || password != null || accessStatus === 'canceled' || accessStatus === 'inactive') {
+      authStore.revokeSessionsForUser(id);
+    }
+
+    res.json({ success: true, user: buildPublicUser(updated) });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/admin/users/:id/revoke-sessions', rateLimit, requireAdmin, (req, res) => {
+  const { id } = req.params;
+  const revoked = authStore.revokeSessionsForUser(id);
+  res.json({ success: true, revoked });
+});
+
 // ===== ROTAS VIP =====
 
-app.get('/api/vip/signal', rateLimit, vipAuth, async (req, res) => {
+app.get('/api/vip/signal', rateLimit, requireVipAccess, async (req, res) => {
   const asset   = (req.query.asset   || 'xauusd').toLowerCase();
   const entryTf = (req.query.entryTf || '15m').toLowerCase();
   const biasTf  = (req.query.biasTf  || '1h').toLowerCase();
@@ -1930,7 +2229,7 @@ app.get('/api/vip/signal', rateLimit, vipAuth, async (req, res) => {
   if (!validTfs.includes(entryTf)) return res.status(400).json({ success: false, error: `entryTf inválido` });
   if (!validTfs.includes(biasTf))  return res.status(400).json({ success: false, error: `biasTf inválido` });
   try {
-    const signal = await computeVipSignal(asset, entryTf, biasTf);
+    const signal = await computeVipSignal(asset, entryTf, biasTf, { skipPersist: true });
     res.json(signal);
   } catch (err) {
     logger.error('VIP signal error:', err.message);
@@ -1938,13 +2237,13 @@ app.get('/api/vip/signal', rateLimit, vipAuth, async (req, res) => {
   }
 });
 
-app.get('/api/vip/signals', rateLimit, vipAuth, (req, res) => {
+app.get('/api/vip/signals', rateLimit, requireVipAccess, (req, res) => {
   const { asset, status, limit } = req.query;
   const signals = tradeStore.listSignals({ asset, status, limit: parseInt(limit) || 100 });
   res.json({ success: true, count: signals.length, signals });
 });
 
-app.post('/api/vip/trades/open', rateLimit, vipAuth, async (req, res) => {
+app.post('/api/vip/trades/open', rateLimit, requireVipAccess, async (req, res) => {
   const { asset, direction, entry, sl, tp, atr, rr, score, biasTf, entryTf, session, reason } = req.body;
   if (!asset || !direction || entry == null || sl == null || tp == null)
     return res.status(400).json({ success: false, error: 'Campos obrigatórios: asset, direction, entry, sl, tp' });
@@ -1955,7 +2254,7 @@ app.post('/api/vip/trades/open', rateLimit, vipAuth, async (req, res) => {
 
   try {
     const freshSignal = await computeVipSignal(asset.toLowerCase(), entryTf || '15m', biasTf || '1h', { skipPersist: true });
-    const blockedStatuses = ['NEWS_BLOCKED', 'CONTEXT_BLOCKED', 'NO_SIGNAL', 'NO_BIAS', 'INSUFFICIENT_DATA'];
+    const blockedStatuses = ['NEWS_BLOCKED', 'CONTEXT_BLOCKED', 'NO_SIGNAL', 'NO_BIAS', 'INSUFFICIENT_DATA', 'SIMULATION_BLOCKED', 'MARKET_CLOSED'];
     if (blockedStatuses.includes(freshSignal.status)) {
       return res.status(409).json({
         success: false,
@@ -1992,7 +2291,7 @@ app.post('/api/vip/trades/open', rateLimit, vipAuth, async (req, res) => {
   res.json({ success: true, trade });
 });
 
-app.post('/api/vip/trades/close', rateLimit, vipAuth, (req, res) => {
+app.post('/api/vip/trades/close', rateLimit, requireVipAccess, (req, res) => {
   const { id, closePrice, outcome } = req.body;
   if (!id || closePrice == null)
     return res.status(400).json({ success: false, error: 'Campos obrigatórios: id, closePrice' });
@@ -2016,20 +2315,20 @@ app.post('/api/vip/trades/close', rateLimit, vipAuth, (req, res) => {
   res.json({ success: true, trade });
 });
 
-app.get('/api/vip/trades', rateLimit, vipAuth, (req, res) => {
+app.get('/api/vip/trades', rateLimit, requireVipAccess, (req, res) => {
   const { asset, status, limit } = req.query;
   const trades = tradeStore.listTrades({ asset, status, limit: parseInt(limit) || 100 });
   res.json({ success: true, count: trades.length, trades });
 });
 
-app.get('/api/vip/stats', rateLimit, vipAuth, (req, res) => {
+app.get('/api/vip/stats', rateLimit, requireVipAccess, (req, res) => {
   const { asset } = req.query;
   const stats = tradeStore.getStats({ asset });
   res.json({ success: true, stats });
 });
 
 // PATCH /api/vip/trades/:id — atualiza notes/tags de um trade
-app.patch('/api/vip/trades/:id', rateLimit, vipAuth, (req, res) => {
+app.patch('/api/vip/trades/:id', rateLimit, requireVipAccess, (req, res) => {
   const { id } = req.params;
   if (!id || typeof id !== 'string') return res.status(400).json({ success: false, error: 'ID inválido' });
   const updated = tradeStore.updateTrade(id, req.body || {});
@@ -2041,7 +2340,7 @@ app.patch('/api/vip/trades/:id', rateLimit, vipAuth, (req, res) => {
  * GET /api/vip/scan?entryTf=15m&biasTf=4h
  * Escaneia todos os ativos de uma vez e retorna resumo de cada um
  */
-app.get('/api/vip/scan', rateLimit, vipAuth, async (req, res) => {
+app.get('/api/vip/scan', rateLimit, requireVipAccess, async (req, res) => {
   const entryTf = (req.query.entryTf || '15m').toLowerCase();
   const biasTf  = (req.query.biasTf  || '1h').toLowerCase();
   const validTfs = ['15m', '1h', '4h', 'daily', '1d'];
@@ -2418,6 +2717,8 @@ if (OANDA_API_KEY) {
 // ===== START =====
 app.listen(PORT, async () => {
   logger.info(`Trading Dashboard v${VERSION} iniciado | porta ${PORT} | ${Object.keys(ASSETS).length} ativos: ${Object.values(ASSETS).map(a=>a.name).join(', ')}`);
+
+  bootstrapAdminAccount();
 
   if (TWELVE_DATA_KEY === 'COLE_SUA_CHAVE_AQUI') {
     logger.warn('TWELVE_DATA_KEY não configurada — usando Twelve Data apenas como fallback');
