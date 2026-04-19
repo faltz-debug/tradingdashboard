@@ -281,17 +281,19 @@
     /* ── CHECKLIST ── */
     .checklist { display: flex; flex-direction: column; gap: 10px; }
     .check-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 8px; background: rgba(255,255,255,.025); border: 1px solid transparent; transition: border-color .15s; }
-    .check-row.pass { border-color: rgba(38,166,154,.25); }
-    .check-row.fail { border-color: rgba(239,83,80,.15); }
-    .check-row.warn { border-color: rgba(240,180,41,.2); }
+    .check-row.pass    { border-color: rgba(38,166,154,.25); }
+    .check-row.fail    { border-color: rgba(239,83,80,.15); }
+    .check-row.warn    { border-color: rgba(240,180,41,.2); }
+    .check-row.neutral { border-color: rgba(255,255,255,.06); opacity: .7; }
     .check-icon { font-size: 18px; min-width: 22px; text-align: center; }
     .check-info { flex: 1; }
     .check-name { font-size: 13px; font-weight: 600; }
     .check-desc { font-size: 11px; color: var(--muted); margin-top: 2px; }
     .check-value { font-size: 12px; font-weight: 700; }
-    .check-value.pass { color: var(--green); }
-    .check-value.fail { color: var(--red); }
-    .check-value.warn { color: var(--gold); }
+    .check-value.pass    { color: var(--green); }
+    .check-value.fail    { color: var(--red); }
+    .check-value.warn    { color: var(--gold); }
+    .check-value.neutral { color: var(--muted); }
 
     /* ── NÍVEIS ── */
     .levels-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
@@ -1008,7 +1010,7 @@ async function runScan() {
       if (!card) return;
       const status = s.status || 'NO_SIGNAL';
       const dir    = s.direction || 'NEUTRAL';
-      const scoreStr = s.score != null ? `${s.score}/7 • ADX ${s.adx != null ? fmtNum(s.adx,1) : '—'}` : '—';
+      const scoreStr = s.score != null ? `${s.score}/${s.maxScore||7} • ADX ${s.adx != null ? fmtNum(s.adx,1) : '—'}` : '—';
       const op = s.operationalContext || null;
       const opColor = op?.status === 'OPERAR' ? 'var(--green)' : op?.status === 'EVITAR' ? 'var(--red)' : 'var(--gold)';
       card.className = `scanner-card ${status}`;
@@ -1212,7 +1214,7 @@ function renderSignal(data) {
       ${data.direction === 'BUY' ? '📈 BUY' : data.direction === 'SELL' ? '📉 SELL' : '◼ NEUTRO'}
     </div>
     <div class="score-ring">
-      <div class="score-val">${data.score || 0}<span style="font-size:14px;color:var(--muted)">/7</span></div>
+      <div class="score-val">${data.score || 0}<span style="font-size:14px;color:var(--muted)">/${data.maxScore || 7}</span></div>
       <div class="score-label">Score</div>
     </div>
     <div class="reason-text">
@@ -1251,12 +1253,85 @@ function renderSignal(data) {
       pass: op?.status === 'OPERAR',
       cls: op?.status === 'EVITAR' ? 'fail' : op?.status === 'OPERAR' ? 'pass' : 'warn',
       value: op ? `${op.status} • ${op.summary}` : 'CAUTELA' },
+
+    // ── Filtros Bônus Universais ──────────────────────────────────────────
+    { label: 'Inside Bar', weight: '+1pt', section: 'bônus',
+      desc: 'Candle mãe → inside bar → confirmação direcional',
+      pass: f.insideBar,
+      cls: f.insideBar ? 'pass' : 'neutral',
+      value: f.insideBar ? 'Confirmada ✅' : 'Não detectada' },
+    { label: 'Volume Confirmado', weight: '+1pt', section: 'bônus',
+      desc: f.volumeData === null ? 'Dados de volume indisponíveis (forex)' : `Volume ${f.volumeData ? 'acima' : 'abaixo'} da média 20 períodos`,
+      pass: f.volumeOk,
+      cls: f.volumeData === null ? 'neutral' : f.volumeOk ? 'pass' : 'warn',
+      value: f.volumeData === null ? '— sem dados' : f.volumeOk ? 'Acima da média ✅' : 'Fraco ⚠️' },
+    { label: 'BB Squeeze', weight: '+1pt', section: 'bônus',
+      desc: 'Bandas de Bollinger comprimidas — expansão iminente',
+      pass: f.bbSqueeze,
+      cls: f.bbSqueeze ? 'pass' : 'neutral',
+      value: f.bbSqueeze ? 'Squeeze ativo ✅' : 'Sem compressão' },
+    { label: 'Pullback EMA20', weight: '+1pt', section: 'bônus',
+      desc: 'Retorno à EMA20 com EMAs alinhadas e vela de confirmação',
+      pass: f.pullbackEma,
+      cls: f.pullbackEma ? 'pass' : 'neutral',
+      value: f.pullbackEma ? 'Pullback válido ✅' : 'Sem pullback' },
+    { label: 'Divergência RSI/MACD', weight: '+1pt', section: 'bônus',
+      desc: f.divOpposing ? '⚠️ Divergência CONTRÁRIA ao sinal detectada' : 'Divergência confirma a direção do sinal',
+      pass: f.divConfirm,
+      cls: f.divOpposing ? 'warn' : f.divConfirm ? 'pass' : 'neutral',
+      value: f.divConfirm ? 'Confirma ✅' : f.divOpposing ? 'Opõe ⚠️' : 'Sem divergência' },
+    { label: 'Fibonacci', weight: '+1pt', section: 'bônus',
+      desc: 'Entrada em zona de retração chave (38.2%, 50% ou 61.8%)',
+      pass: f.fibOk,
+      cls: f.fibOk ? 'pass' : 'neutral',
+      value: f.fibOk ? 'Em zona Fib ✅' : 'Fora das zonas' },
+    { label: 'Bias 4H (Macro)', weight: '+1pt', section: 'bônus',
+      desc: `Tendência macro 4H: ${data.meta?.bias4h?.trend || '—'}`,
+      pass: f.bias4hOk,
+      cls: f.bias4hOpposing ? 'warn' : f.bias4hOk ? 'pass' : 'neutral',
+      value: f.bias4hOk ? `4H ${data.meta?.bias4h?.trend} ✅` : f.bias4hOpposing ? `4H contra ⚠️` : `4H ${data.meta?.bias4h?.trend || 'NEUTRAL'}` },
+
+    // ── Filtros Bônus por Ativo ───────────────────────────────────────────
+    ...(f.ichimoku !== undefined ? [{
+      label: 'Ichimoku', weight: '+1pt', section: 'bônus',
+      desc: data.meta?.ichimoku?.insideKumo ? '⚠️ Preço dentro da Kumo — zona de transição' : `Preço ${data.meta?.ichimoku?.aboveKumo ? 'acima' : 'abaixo'} da Kumo + Tenkan/Kijun`,
+      pass: f.ichimoku,
+      cls: data.meta?.ichimoku?.insideKumo ? 'warn' : f.ichimoku ? 'pass' : 'neutral',
+      value: f.ichimoku ? 'Alinhado ✅' : data.meta?.ichimoku?.insideKumo ? 'Dentro Kumo ⚠️' : 'Não alinhado',
+    }] : []),
+    ...(f.vwapOk !== undefined ? [{
+      label: 'VWAP Sessão', weight: '+1pt', section: 'bônus',
+      desc: `VWAP: ${data.meta?.vwap?.value != null ? fmtNum(data.meta.vwap.value, getDecimals(data.asset)) : '—'}`,
+      pass: f.vwapOk,
+      cls: f.vwapOk ? 'pass' : 'neutral',
+      value: f.vwapOk ? 'Alinhado ✅' : 'Não alinhado',
+    }] : []),
+    ...(f.dxyOk !== undefined ? [{
+      label: 'DXY Correlação', weight: '+1pt', section: 'bônus',
+      desc: data.meta?.dxy?.warning || `DXY tendência: ${data.meta?.dxy?.trend || '—'}`,
+      pass: f.dxyOk,
+      cls: data.meta?.dxy?.opposing ? 'warn' : f.dxyOk ? 'pass' : 'neutral',
+      value: f.dxyOk ? `DXY ${data.meta?.dxy?.trend} ✅` : data.meta?.dxy?.opposing ? 'DXY contra ⚠️' : `DXY ${data.meta?.dxy?.trend || '—'}`,
+    }] : []),
+    ...(f.fngOk !== undefined ? [{
+      label: 'Fear & Greed', weight: '+1pt', section: 'bônus',
+      desc: `Índice: ${data.meta?.fearGreed?.value ?? '—'} — ${data.meta?.fearGreed?.classification || '—'}`,
+      pass: f.fngOk,
+      cls: f.fngOpposing ? 'warn' : f.fngOk ? 'pass' : 'neutral',
+      value: f.fngOk ? `${data.meta?.fearGreed?.emoji}${data.meta?.fearGreed?.value} ✅` : f.fngOpposing ? `${data.meta?.fearGreed?.emoji}${data.meta?.fearGreed?.value} ⚠️` : `${data.meta?.fearGreed?.emoji || ''}${data.meta?.fearGreed?.value ?? '—'}`,
+    }] : []),
   ];
 
+  let lastSection = null;
   document.getElementById('checklist').innerHTML = checks.map(c => {
     const cls = c.cls || (c.pass ? 'pass' : 'fail');
-    const icon = cls === 'pass' ? '✅' : cls === 'warn' ? '⚠️' : '❌';
-    return `<div class="check-row ${cls}">
+    const icon = cls === 'pass' ? '✅' : cls === 'warn' ? '⚠️' : cls === 'neutral' ? '◽' : '❌';
+    let separator = '';
+    if (c.section && c.section !== lastSection) {
+      lastSection = c.section;
+      separator = `<div style="margin:6px 0 2px;font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--muted);text-transform:uppercase;padding-left:4px">🚀 Filtros Bônus</div>`;
+    }
+    return separator + `<div class="check-row ${cls}">
       <span class="check-icon">${icon}</span>
       <div class="check-info">
         <div class="check-name">${sanitize(c.label)} <span style="color:var(--muted);font-size:10px;font-weight:400">${c.weight}</span></div>
@@ -1418,7 +1493,7 @@ function renderOpenTrades(trades) {
     <td style="color:var(--red)">${fmtNum(t.sl, getDecimals(t.asset))}</td>
     <td style="color:var(--green)">${fmtNum(t.tp, getDecimals(t.asset))}</td>
     <td>${fmtNum(t.atr, getDecimals(t.asset))}</td>
-    <td style="color:var(--gold)">${t.score}/7</td>
+    <td style="color:var(--gold)">${t.score}/${t.maxScore||7}</td>
     <td>${sanitize(t.session||'—')}</td>
     <td>${fmtDate(t.openedAt)}</td>
     <td><button class="btn-close" onclick="openCloseModal('${sanitize(t.id)}')">Fechar</button></td>
@@ -1648,7 +1723,7 @@ async function loadSignalHistory() {
     <td>${sanitize((s.asset||'').toUpperCase())}</td>
     <td><span class="sig-status ${sanitize(s.status)}">${sanitize(s.status)}</span></td>
     <td>${s.direction==='BUY'?'<span class="tag buy">BUY</span>':s.direction==='SELL'?'<span class="tag sell">SELL</span>':'<span style="color:var(--muted)">—</span>'}</td>
-    <td style="color:var(--gold)">${s.score!=null?s.score+'/7':'—'}</td>
+    <td style="color:var(--gold)">${s.score!=null?s.score+'/'+(s.maxScore||7):'—'}</td>
     <td style="color:var(--muted)">${sanitize(s.entryTf||'—')}</td>
     <td style="color:var(--muted)">${sanitize(s.biasTf||'—')}</td>
     <td>${s.meta?.adx!=null?fmtNum(s.meta.adx,1):'—'}</td>
