@@ -3,6 +3,12 @@
 .env.local
 .env.production
 
+# Banco de dados SQLite — NUNCA commitar (Railway usa volume persistente)
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/*.db-journal
+
 # Estado persistido em runtime (não commitar)
 data/lastSignals.json
 data/vip_trades.json
