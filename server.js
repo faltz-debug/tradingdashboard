@@ -2565,17 +2565,13 @@ async function computeVipSignal(assetKey, entryTf = '15m', biasTf = '1h', { skip
 
   // Score base: ema(2) + breakout(2) + adx(2) + session(1) = 7
   // Bônus universais:  insideBar+volume+bbSqueeze+pullback+divConfirm+fib+bias4h = +7
-  // Bônus por ativo:
+  // Bônus por ativo (fixos — não variam com disponibilidade de API):
   //   USD/JPY:  + ichimoku(+1)                        = max 15
   //   BTC:      + ichimoku(+1) + vwap(+1) + fng(+1)  = max 17
   //   XAU/USD:  + vwap(+1)    + dxy(+1)              = max 16
   //   EUR/USD:  apenas os 7 universais                = max 14
-  const maxBonus = 7
-    + (ichimokuCtx !== null ? 1 : 0)
-    + (vwapCtx     !== null ? 1 : 0)
-    + (dxyCtx      !== null ? 1 : 0)
-    + (fngCtx      !== null ? 1 : 0);   // BTC only
-  const maxScore = 7 + maxBonus;
+  const ASSET_MAX_SCORE = { eurusd: 14, usdjpy: 15, xauusd: 16, btc: 17 };
+  const maxScore = ASSET_MAX_SCORE[assetKey] ?? 14;
 
   let score = 0;
   if (filterEma)        score += 2;
@@ -3256,6 +3252,7 @@ app.get('/api/vip/scan', rateLimit, requireVipAccess, async (req, res) => {
         status:    sig.status,
         direction: sig.direction,
         score:     sig.score,
+        maxScore:  sig.maxScore,
         adx:       sig.meta?.adx,
         session:   sig.meta?.session,
         price:     sig.meta?.price,
