@@ -732,6 +732,18 @@ function updateTrade(id, fields) {
   return trade;
 }
 
+// Atualiza o SL e peakPrice de um trade aberto (usado pelo trailing stop)
+// Retorna o trade atualizado ou null se não encontrado
+function updateTradeSL(id, { sl, peakPrice } = {}) {
+  const row = db.prepare("SELECT data FROM trades WHERE id = ? AND status = 'open'").get(id);
+  if (!row) return null;
+  const trade = JSON.parse(row.data);
+  if (sl        !== undefined) trade.sl        = sl;
+  if (peakPrice !== undefined) trade.peakPrice = peakPrice;
+  _stmtTradeUpdate.run('open', JSON.stringify(trade), id);
+  return trade;
+}
+
 function getStats({ asset } = {}) {
   const rows = asset
     ? db.prepare("SELECT data FROM trades WHERE status='closed' AND asset=?").all(asset)
@@ -786,6 +798,7 @@ module.exports = {
   openTrade,
   closeTrade,
   updateTrade,
+  updateTradeSL,
   listTrades,
   getStats,
   appendSignal,

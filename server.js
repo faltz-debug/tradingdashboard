@@ -3568,29 +3568,80 @@ async function checkOpenTradesForExit(asset, data) {
   const candles = data['15m'];
   if (!candles || candles.length < 2) return;
 
-  // Usa a vela anterior a ultima (a ultima pode ainda estar formando)
+  // Usa a vela anterior à última (a última pode ainda estar formando)
   const candle = candles[candles.length - 2];
   if (!candle) return;
 
   const candleOpenAtMs  = (candle.time || 0) * 1000;
   const candleCloseAtMs = candleOpenAtMs + (15 * 60 * 1000);
 
+  // ATR atual para trailing stop (14 períodos ou menos se não houver dados suficientes)
+  const currentAtr = calcATR(candles) || 0;
+
   const openTrades = tradeStore.listTrades({ asset, status: 'open' });
   if (!openTrades.length) return;
 
-  for (const trade of openTrades) {
-    const { id, direction, entry, sl, tp, openedAt } = trade;
-    if (!sl || isNaN(sl)) continue; // sem SL definido - pular
+  const cfg = ASSETS[asset];
 
-    // So avalia candles totalmente posteriores a abertura do trade.
-    // Se o trade abriu no meio da vela, o high/low dessa vela e ambiguo.
+  for (const trade of openTrades) {
+    let { id, direction, entry, sl, tp, openedAt, atr: tradeAtr, peakPrice } = trade;
+    if (!sl || isNaN(sl)) continue;
+
+    // Só avalia candles totalmente posteriores à abertura do trade
     if (!openedAt || candleOpenAtMs <= openedAt || candleCloseAtMs <= openedAt) continue;
 
-    const isBuy  = direction === 'BUY';
-    const hasTP  = tp != null && !isNaN(tp);
+    const isBuy = direction === 'BUY';
+    const hasTP = tp != null && !isNaN(tp);
 
-    // Detecta qual nivel foi tocado
-    let outcome   = null;
+    // ── TRAILING STOP POR ATR ─────────────────────────────────────────────
+    // Usa o ATR do momento da abertura (mais estável) com fallback para ATR atual
+    const trailAtr = (tradeAtr && !isNaN(tradeAtr) && tradeAtr > 0) ? tradeAtr : currentAtr;
+
+    if (trailAtr > 0) {
+      // Atualiza peakPrice: máximo high (BUY) ou mínimo low (SELL) desde a abertura
+      const newPeak = isBuy
+        ? Math.max(peakPrice ?? entry, candle.high)
+        : Math.min(peakPrice ?? entry, candle.low);
+
+      // Trailing SL = peakPrice - 1.5×ATR (BUY) | peakPrice + 1.5×ATR (SELL)
+      const trailDist = 1.5 * trailAtr;
+      const trailSL   = isBuy
+        ? parseFloat((newPeak - trailDist).toFixed(cfg?.decimals ?? 5))
+        : parseFloat((newPeak + trailDist).toFixed(cfg?.decimals ?? 5));
+
+      // Só move SL se melhorar (nunca recua)
+      const slImproved = isBuy ? trailSL > sl : trailSL < sl;
+
+      if (slImproved) {
+        const prevSL   = sl;
+        const wasBelow = isBuy ? prevSL < entry : prevSL > entry; // estava abaixo do entry?
+        const nowAbove = isBuy ? trailSL >= entry : trailSL <= entry; // passou para acima?
+
+        sl = trailSL;
+        tradeStore.updateTradeSL(id, { sl: trailSL, peakPrice: newPeak });
+        logger.info(`Trailing SL ${asset.toUpperCase()} ${direction}: ${prevSL} → ${trailSL} (peak ${newPeak})`);
+
+        // Alerta Telegram quando atinge breakeven (SL cruza o preço de entrada)
+        if (wasBelow && nowAbove) {
+          const beMsg = [
+            `🔒 <b>VIP — BREAKEVEN ATINGIDO</b>`,
+            ``,
+            `<b>${asset.toUpperCase()}</b>  ${direction}  — trade protegido`,
+            `Entry: ${entry}  |  Novo SL: <b>${trailSL}</b>`,
+            `Peak: ${newPeak}  |  ATR: ${trailAtr}`,
+          ].join('\n');
+          sendTelegram(beMsg).catch(() => {});
+        }
+      }
+
+      // Atualiza peakPrice mesmo se SL não melhorou (para próximo ciclo)
+      if (newPeak !== peakPrice) {
+        tradeStore.updateTradeSL(id, { peakPrice: newPeak });
+      }
+    }
+
+    // ── VERIFICAÇÃO DE SAÍDA (TP / SL) ───────────────────────────────────
+    let outcome    = null;
     let closePrice = null;
 
     if (isBuy) {
@@ -3602,7 +3653,6 @@ async function checkOpenTradesForExit(asset, data) {
         closePrice = sl;
       }
     } else {
-      // SELL
       if (hasTP && candle.low <= tp) {
         outcome    = 'TP';
         closePrice = tp;
@@ -3614,21 +3664,20 @@ async function checkOpenTradesForExit(asset, data) {
 
     if (!outcome) continue;
 
-    // Fecha o trade no SQLite
     const closed = tradeStore.closeTrade(id, { closePrice, outcome });
     if (!closed) continue;
 
     logger.info(`Auto-close ${asset.toUpperCase()} ${direction} -> ${outcome} @ ${closePrice} | ${closed.pnlR}R`);
 
-    // Telegram - mesmo formato do fechamento manual
     const pnlPos       = (closed.pnlR || 0) >= 0;
     const outcomeEmoji = outcome === 'TP' ? '\u2705' : '\u274C';
     const pnlEmoji     = pnlPos ? '\uD83D\uDCB0' : '\uD83D\uDCC9';
+    const trailNote    = closed.peakPrice ? ` | Peak: ${closed.peakPrice}` : '';
     const autoMsg = [
       `\u2B50 <b>VIP - AUTO-FECHADO</b> ${outcomeEmoji}`,
       ``,
       `<b>${asset.toUpperCase()}</b>  ${direction}  ->  ${outcome} <i>(automatico)</i>`,
-      `Entry: ${entry}  |  Close: <b>${closePrice}</b>`,
+      `Entry: ${entry}  |  Close: <b>${closePrice}</b>${trailNote}`,
       `Resultado: ${pnlEmoji} <b>${pnlPos ? '+' : ''}${closed.pnlR}R</b>  (${pnlPos ? '+' : ''}${closed.pnlPct}%)`,
       closed.session ? `Sessao: ${closed.session}` : '',
     ].filter(Boolean).join('\n');
