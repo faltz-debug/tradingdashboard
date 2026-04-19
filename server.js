@@ -100,6 +100,23 @@ const OANDA_POLL_MS   = 2 * 60 * 1000;   // polling a cada 2 minutos
 // Mapa ativo → instrumento OANDA (chaves devem bater com ASSETS)
 const OANDA_INSTRUMENT = { xauusd: 'XAU_USD', eurusd: 'EUR_USD', usdjpy: 'USD_JPY' };
 
+// ── FINNHUB (quotes em tempo real para forex — alternativa ao OANDA) ─────────
+// Gratuito: https://finnhub.io → crie conta → API Keys → copie a chave
+// Variável: FINNHUB_API_KEY no Railway
+// Fornece preço spot atualizado para EUR/USD, USD/JPY, XAU/USD e BTC/USD
+const FINNHUB_API_KEY = process.env.FINNHUB_API_KEY || '';
+// Mapa ativo → símbolo Finnhub (forex usa prefixo "OANDA:", BTC usa "BINANCE:")
+const FINNHUB_SYMBOL = {
+  eurusd: 'OANDA:EUR_USD',
+  usdjpy: 'OANDA:USD_JPY',
+  xauusd: 'OANDA:XAU_USD',
+  btc:    'BINANCE:BTCUSDT',
+};
+
+// ── maxScore fixo por ativo (teórico máximo, não depende de disponibilidade de API) ──
+// Score base 7 + bônus universais 7 + bônus específicos por ativo
+const ASSET_MAX_SCORE = { eurusd: 14, usdjpy: 15, xauusd: 16, btc: 17 };
+
 // ===== TELEGRAM ALERTS =====
 const ALERT_COOLDOWN_MS  = 60 * 60 * 1000; // 1 hora entre alertas do mesmo ativo
 const SIGNALS_FILE       = path.join(__dirname, 'data', 'lastSignals.json');
@@ -1378,6 +1395,39 @@ async function pollOanda() {
   }
 }
 
+// ===== FINNHUB — quote em tempo real (alternativa ao OANDA para preço spot) =====
+// Não fornece candles — só atualiza o preço corrente no cache (para exibição e SL/TP)
+async function pollFinnhub() {
+  if (!FINNHUB_API_KEY) return;
+  for (const [key, symbol] of Object.entries(FINNHUB_SYMBOL)) {
+    if (!isMarketOpen(key)) continue;
+    try {
+      const res = await axios.get('https://finnhub.io/api/v1/quote', {
+        params: { symbol, token: FINNHUB_API_KEY },
+        timeout: 5000,
+      });
+      const quote = res.data;
+      // c = current price, h = high, l = low, o = open, pc = prev close
+      if (!quote || !quote.c || quote.c <= 0) continue;
+      const currentPrice = parseFloat(quote.c);
+      // Injeta o preço atualizado no cache existente sem substituir os candles
+      const entry = cache[key];
+      if (entry?.data) {
+        entry.data.price = currentPrice;
+        entry.data.finnhubUpdatedAt = Date.now();
+        // Atualiza o último close nos candles 15m para que o sinal use preço correto
+        const candles15m = entry.data['15m'];
+        if (candles15m?.length) {
+          candles15m[candles15m.length - 1].close = currentPrice;
+        }
+        logger.debug(`Finnhub ${key}: ${currentPrice}`);
+      }
+    } catch (e) {
+      logger.warn(`Finnhub poll ${key}: ${e.message}`);
+    }
+  }
+}
+
 // ===== BUSCA TWELVE DATA =====
 async function fetchFromTwelveData(symbol) {
   // Busca velas de 15min — suficiente para agregar em 1h, 4h e daily
@@ -2409,6 +2459,8 @@ async function computeVipSignal(assetKey, entryTf = '15m', biasTf = '1h', { skip
   const entryKey = TF_MAP[entryTf] || '15m';
   const biasKey  = TF_MAP[biasTf]  || '1h';
 
+  const _maxScore = ASSET_MAX_SCORE[assetKey] ?? 14;
+
   const data = await getAsset(assetKey);
   if (data.isSimulation) {
     return {
@@ -2416,6 +2468,8 @@ async function computeVipSignal(assetKey, entryTf = '15m', biasTf = '1h', { skip
       asset: assetKey,
       biasTf,
       entryTf,
+      maxScore: _maxScore,
+      score: 0,
       status: 'SIMULATION_BLOCKED',
       reason: 'Sinal VIP indisponivel com dados simulados',
       filters: { emaAligned: false, breakout20: false, adxOk: false, sessionOk: false, newsBlocked: false },
@@ -2429,6 +2483,8 @@ async function computeVipSignal(assetKey, entryTf = '15m', biasTf = '1h', { skip
       asset: assetKey,
       biasTf,
       entryTf,
+      maxScore: _maxScore,
+      score: 0,
       status: 'MARKET_CLOSED',
       reason: 'Sinal VIP indisponivel com mercado fechado',
       filters: { emaAligned: false, breakout20: false, adxOk: false, sessionOk: false, newsBlocked: false },
@@ -2443,6 +2499,8 @@ async function computeVipSignal(assetKey, entryTf = '15m', biasTf = '1h', { skip
     return {
       success: false,
       asset: assetKey,
+      maxScore: _maxScore,
+      score: 0,
       status: 'INSUFFICIENT_DATA',
       reason: `Dados insuficientes: ${entryCandles.length} candles de entrada, ${biasCandles.length} de viés`,
     };
@@ -2456,7 +2514,7 @@ async function computeVipSignal(assetKey, entryTf = '15m', biasTf = '1h', { skip
   if (direction === 'NEUTRAL') {
     return {
       success: true, asset: assetKey, biasTf, entryTf, direction: 'NEUTRAL',
-      score: 0, status: 'NO_BIAS',
+      score: 0, maxScore: _maxScore, status: 'NO_BIAS',
       filters: { emaAligned: false, breakout20: false, adxOk: false, sessionOk: false, newsBlocked: false },
       levels: null, meta: { reason: 'EMAs sem tendência definida no timeframe de viés' },
     };
@@ -2570,8 +2628,7 @@ async function computeVipSignal(assetKey, entryTf = '15m', biasTf = '1h', { skip
   //   BTC:      + ichimoku(+1) + vwap(+1) + fng(+1)  = max 17
   //   XAU/USD:  + vwap(+1)    + dxy(+1)              = max 16
   //   EUR/USD:  apenas os 7 universais                = max 14
-  const ASSET_MAX_SCORE = { eurusd: 14, usdjpy: 15, xauusd: 16, btc: 17 };
-  const maxScore = ASSET_MAX_SCORE[assetKey] ?? 14;
+  const maxScore = _maxScore; // definido no topo da função via ASSET_MAX_SCORE (módulo)
 
   let score = 0;
   if (filterEma)        score += 2;
@@ -3340,7 +3397,8 @@ app.get('/api/health', rateLimit, (req, res) => {
     version:       VERSION,
     twelveDataKey: TWELVE_DATA_KEY === 'COLE_SUA_CHAVE_AQUI' ? '❌ não configurado' : '✅ ok',
     btcFonte:      cache['btc']?.data?.source || 'carregando...',
-    oanda:         OANDA_API_KEY  ? `✅ configurado (${OANDA_PRACTICE ? 'prática' : 'real'})` : 'ℹ️ não configurado (usando Twelve Data)',
+    oanda:         OANDA_API_KEY  ? `✅ configurado (${OANDA_PRACTICE ? 'prática' : 'real'})` : 'ℹ️ não configurado',
+    finnhub:       FINNHUB_API_KEY ? '✅ configurado (preço spot 2min)' : 'ℹ️ não configurado',
     autoBlockWeakContext: AUTO_BLOCK_WEAK_CONTEXT ? '✅ ativo' : '⏸ desativado',
     yahooFinance:  '⏸ desativado',
     alertInterval: `${ALERT_INTERVAL_MS / 60000} min`,
@@ -3729,9 +3787,8 @@ setInterval(async () => {
 // (adicionado junto com os outros endpoints admin mais abaixo)
 
 // ===== AUTO-REFRESH + ALERTAS =====
-// Com fontes real-time ativas, o ciclo roda a cada 5 min para processar alertas.
-// Yahoo Finance (sempre disponível) mantém ciclos de 5 min; OANDA mantém 2 min.
-const ALERT_INTERVAL_MS = OANDA_API_KEY ? 2 * 60 * 1000 : 5 * 60 * 1000;
+// Prioridade: OANDA (2min) > Finnhub (2min) > padrão Twelve Data (5min)
+const ALERT_INTERVAL_MS = (OANDA_API_KEY || FINNHUB_API_KEY) ? 2 * 60 * 1000 : 5 * 60 * 1000;
 
 setInterval(async () => {
   for (const key of Object.keys(ASSETS)) {
@@ -3768,6 +3825,12 @@ if (OANDA_API_KEY) {
   setInterval(pollOanda, OANDA_POLL_MS);
 }
 
+// Finnhub polling a cada 2 min (alternativa ao OANDA para preço spot)
+if (FINNHUB_API_KEY && !OANDA_API_KEY) {
+  setInterval(pollFinnhub, 2 * 60 * 1000);
+  logger.info('Finnhub configurado — preço spot EUR/USD, USD/JPY, XAU/USD, BTC a cada 2 min');
+}
+
 // Yahoo Finance polling desativado: Twelve Data voltou a ser o fallback principal
 
 // ===== START =====
@@ -3789,8 +3852,11 @@ app.listen(PORT, async () => {
   if (OANDA_API_KEY) {
     logger.info(`OANDA configurado — XAU/EUR/JPY em tempo real (${OANDA_PRACTICE ? 'prática' : 'real'})`);
     await pollOanda(); // carrega histórico inicial via REST
+  } else if (FINNHUB_API_KEY) {
+    logger.info('Finnhub configurado — preço spot atualizado a cada 2 min (ciclo acelerado)');
+    await pollFinnhub(); // atualiza preços na primeira carga
   } else {
-    logger.warn('OANDA_API_KEY não configurada — usando Twelve Data para XAU/EUR/JPY');
+    logger.warn('OANDA_API_KEY e FINNHUB_API_KEY não configuradas — usando Twelve Data para XAU/EUR/JPY');
   }
 
   // Carga inicial dos ativos restantes (só se ainda sem dados reais)
