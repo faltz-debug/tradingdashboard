@@ -1089,20 +1089,30 @@ async function loadSignal() {
   document.getElementById('statusBadge').className = 'status-badge loading';
   document.getElementById('statusBadge').innerHTML = '<span class="spinner"></span> Calculando...';
 
+  // Timeout de 25s no frontend — evita "Calculando..." eterno se servidor travar
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 25_000);
+
   try {
     const force = btn._forceRefresh ? '&force=1' : '';
     btn._forceRefresh = false;
-    const r = await vipFetch(`/api/vip/signal?asset=${asset}&entryTf=${entryTf}&biasTf=${biasTf}${force}`);
+    const r = await vipFetch(`/api/vip/signal?asset=${asset}&entryTf=${entryTf}&biasTf=${biasTf}${force}`, { signal: controller.signal });
+    clearTimeout(timeoutId);
     const data = await r.json();
     currentSignal = data;
     renderSignal(data);
+    const staleNote = data._stale
+      ? ` <span style="color:var(--gold);font-size:11px" title="${data._staleReason||'Dado desatualizado'}">⚠️ dado antigo</span>`
+      : '';
     const cacheInfo = data._cached
       ? ` <span style="color:var(--muted);font-size:11px" title="Dado em cache — clique em Atualizar para forçar">⚡ cache ${Math.round((Date.now() - data._cachedAt) / 1000)}s atrás</span>`
       : '';
-    document.getElementById('lastUpdate').innerHTML = 'Atualizado: ' + fmtDate(Date.now()) + cacheInfo;
+    document.getElementById('lastUpdate').innerHTML = 'Atualizado: ' + fmtDate(Date.now()) + cacheInfo + staleNote;
   } catch(e) {
+    clearTimeout(timeoutId);
+    const msg = e.name === 'AbortError' ? 'Tempo esgotado — tente novamente' : (e.message || 'Erro de conexão');
     document.getElementById('statusBadge').className = 'status-badge NEWS_BLOCKED';
-    document.getElementById('statusBadge').textContent = `⚠️ ${e.message || 'Erro de conexão'}`;
+    document.getElementById('statusBadge').textContent = `⚠️ ${msg}`;
   }
   btn.disabled = false;
   btn.textContent = '🔄 Atualizar';

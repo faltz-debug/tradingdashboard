@@ -3101,7 +3101,10 @@ app.post('/api/admin/users/:id/revoke-sessions', rateLimit, requireAdmin, (req, 
 // Cache de resultado por ativo — evita recalcular ao trocar de ativo na UI
 // TTL: 2 minutos. O ciclo de polling do servidor (15min) sempre força recálculo.
 const _signalCache = {};          // { [cacheKey]: { data, cachedAt } }
-const SIGNAL_CACHE_TTL = 2 * 60 * 1000; // 2 minutos
+// TTL precisa ser >= ALERT_INTERVAL_MS para cobrir o gap entre ciclos de background.
+// Sem OANDA o ciclo roda a cada 5 min; com OANDA a cada 2 min.
+// Usando 7 min para garantir cobertura total (ciclo 5min + margem).
+const SIGNAL_CACHE_TTL = 7 * 60 * 1000; // 7 minutos
 
 app.get('/api/vip/signal', rateLimit, requireVipAccess, async (req, res) => {
   const asset   = (req.query.asset   || 'xauusd').toLowerCase();
@@ -3122,13 +3125,18 @@ app.get('/api/vip/signal', rateLimit, requireVipAccess, async (req, res) => {
   }
 
   try {
-    const signal = await computeVipSignal(asset, entryTf, biasTf, { skipPersist: true });
+    // Timeout de 20s: se cálculo travar (API externa lenta), retorna cache antigo ou erro
+    const COMPUTE_TIMEOUT_MS = 20_000;
+    const signal = await Promise.race([
+      computeVipSignal(asset, entryTf, biasTf, { skipPersist: true }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout ao calcular sinal (>20s)')), COMPUTE_TIMEOUT_MS)),
+    ]);
     _signalCache[cacheKey] = { data: signal, cachedAt: Date.now() };
     res.json(signal);
   } catch (err) {
     logger.error('VIP signal error:', err.message);
-    // Se falhou mas tem cache, retorna cache mesmo expirado
-    if (cached) return res.json({ ...cached.data, _cached: true, _stale: true });
+    // Se falhou mas tem cache (mesmo expirado), retorna cache como fallback
+    if (cached) return res.json({ ...cached.data, _cached: true, _stale: true, _staleReason: err.message });
     res.status(500).json({ success: false, error: err.message });
   }
 });
