@@ -1,0 +1,34 @@
+# Proteger chave API e dados sensíveis
+.env
+.env.local
+.env.production
+
+# Banco de dados SQLite — NUNCA commitar (Railway usa volume persistente)
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/*.db-journal
+
+# Estado persistido em runtime (não commitar)
+data/lastSignals.json
+data/vip_trades.json
+data/vip_signals.json
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# Logs e arquivos temporários
+*.log
+*.tmp
+*.tmp.*
+test_out.txt
+server.out.log
+server.err.log
+
+# Linux FUSE artifacts (sandbox)
+data/.fuse_hidden*

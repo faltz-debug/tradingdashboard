@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Trading Algo Pro — Sinais Automáticos MT5 com IA</title>
+  <style>
+    :root {
+      --bg:       #0a0a0a;
+      --surface:  #111111;
+      --card:     #161616;
+      --border:   #222222;
+      --gold:     #f0b429;
+      --gold-dim: #7a5c14;
+      --gold-bg:  rgba(240,180,41,.08);
+      --green:    #26a69a;
+      --red:      #ef5350;
+      --blue:     #5c9eff;
+      --purple:   #ab7ae0;
+      --text:     #e2e2e2;
+      --muted:    #5a5a5a;
+      --muted2:   #888;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      font-size: 15px;
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    /* ── SCROLLBAR ─────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+
+    /* ── NAV ────────────────────────────────────────────────── */
+    nav.topnav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 999;
+      background: rgba(10,10,10,.92);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center;
+      padding: 0 40px; height: 60px; gap: 32px;
+    }
+    .nav-logo {
+      font-weight: 800; font-size: 18px; color: var(--gold);
+      letter-spacing: -.3px; text-decoration: none;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .nav-logo svg { width: 22px; height: 22px; }
+    .nav-links { display: flex; gap: 4px; margin-left: auto; align-items: center; }
+    .nav-links a {
+      color: var(--muted2); text-decoration: none;
+      padding: 7px 14px; border-radius: 7px; font-size: 14px;
+      transition: color .15s, background .15s;
+    }
+    .nav-links a:hover { color: var(--text); background: var(--card); }
+    .nav-cta {
+      background: var(--gold); color: #0a0a0a !important;
+      font-weight: 700 !important; padding: 8px 20px !important;
+      border-radius: 8px !important; margin-left: 8px;
+    }
+    .nav-cta:hover { background: #ffc93c !important; color: #000 !important; }
+
+    /* ── HERO ────────────────────────────────────────────────── */
+    .hero {
+      min-height: 100vh;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 100px 40px 80px;
+      text-align: center;
+      position: relative; overflow: hidden;
+    }
+    .hero-glow {
+      position: absolute; top: 10%; left: 50%; transform: translateX(-50%);
+      width: 600px; height: 600px; border-radius: 50%;
+      background: radial-gradient(circle, rgba(240,180,41,.10) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .hero-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: var(--gold-bg); border: 1px solid rgba(240,180,41,.25);
+      color: var(--gold); font-size: 12px; font-weight: 600;
+      padding: 5px 14px; border-radius: 100px; letter-spacing: .5px;
+      text-transform: uppercase; margin-bottom: 28px;
+    }
+    .hero-badge span { width: 6px; height: 6px; background: var(--gold); border-radius: 50%; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(1.3)} }
+    h1 {
+      font-size: clamp(2.2rem, 5vw, 3.8rem); font-weight: 800;
+      line-height: 1.1; letter-spacing: -1.5px; max-width: 860px;
+      margin-bottom: 24px;
+    }
+    h1 em { font-style: normal; color: var(--gold); }
+    .hero-sub {
+      font-size: clamp(1rem, 2vw, 1.2rem); color: var(--muted2);
+      max-width: 600px; line-height: 1.7; margin-bottom: 44px;
+    }
+    .hero-cta-group { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; justify-content: center; }
+    .btn-primary {
+      background: var(--gold); color: #0a0a0a; font-weight: 700;
+      padding: 14px 32px; border-radius: 10px; font-size: 15px;
+      text-decoration: none; border: none; cursor: pointer;
+      transition: background .15s, transform .1s, box-shadow .15s;
+      box-shadow: 0 0 30px rgba(240,180,41,.25);
+    }
+    .btn-primary:hover { background: #ffc93c; transform: translateY(-1px); box-shadow: 0 0 40px rgba(240,180,41,.35); }
+    .btn-secondary {
+      background: transparent; color: var(--text);
+      padding: 13px 28px; border-radius: 10px; font-size: 15px;
+      text-decoration: none; border: 1px solid var(--border);
+      cursor: pointer; transition: border-color .15s, background .15s;
+    }
+    .btn-secondary:hover { border-color: var(--muted2); background: var(--card); }
+    .hero-note { margin-top: 20px; font-size: 12px; color: var(--muted); }
+
+    /* ── TICKER STRIP ───────────────────────────────────────── */
+    .ticker-wrap {
+      background: var(--surface); border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border); overflow: hidden;
+      padding: 14px 0;
+    }
+    .ticker-inner { display: flex; gap: 32px; animation: tickerMove 20s linear infinite; white-space: nowrap; }
+    @keyframes tickerMove { from{transform:translateX(0)} to{transform:translateX(-50%)} }
+    .ticker-item {
+      display: inline-flex; align-items: center; gap: 10px;
+      background: var(--card); border: 1px solid var(--border);
+      padding: 6px 18px; border-radius: 8px;
+    }
+    .ticker-symbol { font-size: 12px; font-weight: 700; color: var(--muted2); }
+    .ticker-score { font-size: 18px; font-weight: 800; }
+    .ticker-score.buy { color: var(--green); }
+    .ticker-score.sell { color: var(--red); }
+    .ticker-label { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px; }
+    .ticker-label.buy { background: rgba(38,166,154,.15); color: var(--green); }
+    .ticker-label.sell { background: rgba(239,83,80,.15); color: var(--red); }
+    .ticker-label.neutral { background: rgba(136,136,136,.1); color: var(--muted2); }
+
+    /* ── SECTION BASE ───────────────────────────────────────── */
+    section { padding: 100px 40px; }
+    .section-inner { max-width: 1140px; margin: 0 auto; }
+    .section-label {
+      font-size: 11px; font-weight: 700; color: var(--gold);
+      letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 14px;
+    }
+    h2 {
+      font-size: clamp(1.8rem, 3.5vw, 2.8rem); font-weight: 800;
+      letter-spacing: -1px; line-height: 1.15; margin-bottom: 16px;
+    }
+    .section-sub { color: var(--muted2); max-width: 560px; font-size: 1.05rem; margin-bottom: 56px; line-height: 1.7; }
+
+    /* ── FEATURE GRID ───────────────────────────────────────── */
+    .feat-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 20px;
+    }
+    .feat-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 14px; padding: 28px;
+      transition: border-color .2s, transform .2s;
+    }
+    .feat-card:hover { border-color: rgba(240,180,41,.3); transform: translateY(-2px); }
+    .feat-icon {
+      width: 44px; height: 44px; border-radius: 10px;
+      background: var(--gold-bg); border: 1px solid rgba(240,180,41,.2);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px; margin-bottom: 16px;
+    }
+    .feat-title { font-weight: 700; font-size: 16px; margin-bottom: 8px; }
+    .feat-desc { color: var(--muted2); font-size: 14px; line-height: 1.6; }
+
+    /* ── SIGNAL DEMO ─────────────────────────────────────────── */
+    .demo-section { background: var(--surface); }
+    .demo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items: start; }
+    @media(max-width:768px){.demo-grid{grid-template-columns:1fr;}}
+    .signal-card-demo {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 16px; padding: 24px; position: relative; overflow: hidden;
+    }
+    .signal-card-demo::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+    }
+    .signal-card-demo.buy::before { background: var(--green); }
+    .signal-card-demo.sell::before { background: var(--red); }
+    .sig-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
+    .sig-asset { font-size: 18px; font-weight: 800; }
+    .sig-dir-badge {
+      font-size: 11px; font-weight: 800; letter-spacing: .8px;
+      padding: 4px 12px; border-radius: 6px; text-transform: uppercase;
+    }
+    .sig-dir-badge.buy { background: rgba(38,166,154,.15); color: var(--green); border: 1px solid rgba(38,166,154,.3); }
+    .sig-dir-badge.sell { background: rgba(239,83,80,.15); color: var(--red); border: 1px solid rgba(239,83,80,.3); }
+    .sig-score-row { display: flex; align-items: baseline; gap: 6px; margin-bottom: 18px; }
+    .sig-score-num { font-size: 42px; font-weight: 900; line-height: 1; }
+    .sig-score-num.buy { color: var(--green); }
+    .sig-score-num.sell { color: var(--red); }
+    .sig-score-max { font-size: 16px; color: var(--muted2); }
+    .sig-score-label { font-size: 11px; color: var(--muted2); margin-left: 4px; }
+    .sig-bars { display: flex; gap: 4px; margin-bottom: 18px; }
+    .sig-bar { flex: 1; height: 6px; border-radius: 3px; background: var(--border); transition: background .3s; }
+    .sig-bar.filled.buy { background: var(--green); }
+    .sig-bar.filled.sell { background: var(--red); }
+    .sig-levels { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 18px; }
+    .sig-level { background: var(--surface); border-radius: 8px; padding: 8px 12px; }
+    .sig-level-label { font-size: 10px; color: var(--muted2); margin-bottom: 3px; }
+    .sig-level-val { font-size: 14px; font-weight: 700; }
+    .sig-level-val.entry { color: var(--text); }
+    .sig-level-val.sl { color: var(--red); }
+    .sig-level-val.tp { color: var(--green); }
+    .sig-indicators { display: flex; flex-wrap: wrap; gap: 6px; }
+    .sig-tag {
+      font-size: 10px; padding: 3px 8px; border-radius: 4px;
+      background: var(--surface); border: 1px solid var(--border); color: var(--muted2);
+    }
+    .sig-tag.ok { border-color: rgba(38,166,154,.3); color: var(--green); background: rgba(38,166,154,.08); }
+    .sig-tag.warn { border-color: rgba(240,180,41,.3); color: var(--gold); background: rgba(240,180,41,.08); }
+    .sig-bot-badge {
+      margin-top: 16px; display: flex; align-items: center; gap: 8px;
+      background: rgba(38,166,154,.06); border: 1px solid rgba(38,166,154,.2);
+      border-radius: 8px; padding: 8px 14px;
+    }
+    .sig-bot-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+    .sig-bot-text { font-size: 12px; color: var(--green); font-weight: 600; }
+    .demo-info-list { display: flex; flex-direction: column; gap: 22px; }
+    .demo-info-item { display: flex; gap: 16px; align-items: flex-start; }
+    .demo-info-icon {
+      width: 38px; height: 38px; min-width: 38px; border-radius: 9px;
+      background: var(--card); border: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center; font-size: 17px;
+    }
+    .demo-info-title { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
+    .demo-info-desc { color: var(--muted2); font-size: 14px; line-height: 1.5; }
+
+    /* ── STATS BAR ───────────────────────────────────────────── */
+    .stats-bar {
+      background: var(--surface); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+      padding: 50px 40px;
+    }
+    .stats-inner { max-width: 1140px; margin: 0 auto; display: grid; grid-template-columns: repeat(4,1fr); gap: 40px; }
+    @media(max-width:768px){.stats-inner{grid-template-columns:repeat(2,1fr);}}
+    .stat-item { text-align: center; }
+    .stat-num { font-size: 2.6rem; font-weight: 900; color: var(--gold); letter-spacing: -1px; line-height: 1; }
+    .stat-label { color: var(--muted2); font-size: 13px; margin-top: 6px; }
+
+    /* ── HOW IT WORKS ────────────────────────────────────────── */
+    .steps-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; counter-reset: steps; }
+    .step-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 14px; padding: 28px; counter-increment: steps; position: relative;
+    }
+    .step-num {
+      width: 36px; height: 36px; border-radius: 9px;
+      background: var(--gold-bg); border: 1px solid rgba(240,180,41,.25);
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 900; font-size: 15px; color: var(--gold); margin-bottom: 16px;
+    }
+    .step-title { font-weight: 700; font-size: 15px; margin-bottom: 8px; }
+    .step-desc { color: var(--muted2); font-size: 14px; line-height: 1.6; }
+
+    /* ── PRICING ────────────────────────────────────────────── */
+    .pricing-section { background: var(--surface); }
+    .pricing-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+    @media(max-width:900px){ .pricing-grid{ grid-template-columns:1fr; max-width:400px; } }
+    .price-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 16px; padding: 32px; position: relative; transition: transform .2s;
+    }
+    .price-card:hover { transform: translateY(-3px); }
+    .price-card.featured {
+      border-color: var(--gold);
+      background: linear-gradient(160deg, rgba(240,180,41,.06) 0%, var(--card) 100%);
+    }
+    .price-badge {
+      position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
+      background: var(--gold); color: #0a0a0a; font-size: 11px; font-weight: 800;
+      padding: 4px 16px; border-radius: 100px; letter-spacing: .5px; text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .price-plan { font-size: 12px; font-weight: 700; color: var(--muted2); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; }
+    .price-amount { display: flex; align-items: baseline; gap: 4px; margin-bottom: 6px; }
+    .price-currency { font-size: 18px; font-weight: 700; color: var(--muted2); }
+    .price-num { font-size: 3rem; font-weight: 900; line-height: 1; letter-spacing: -2px; }
+    .price-period { font-size: 13px; color: var(--muted2); }
+    .price-desc { font-size: 13px; color: var(--muted2); margin-bottom: 24px; line-height: 1.5; }
+    .price-divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+    .price-features { list-style: none; display: flex; flex-direction: column; gap: 10px; margin-bottom: 28px; }
+    .price-features li { display: flex; gap: 10px; font-size: 14px; color: var(--muted2); }
+    .price-features li span.ok { color: var(--green); font-weight: 700; }
+    .price-features li span.no { color: var(--muted); }
+    .price-features li strong { color: var(--text); }
+    .btn-plan {
+      display: block; text-align: center; text-decoration: none;
+      padding: 13px; border-radius: 10px; font-weight: 700; font-size: 15px;
+      transition: background .15s, transform .1s;
+    }
+    .btn-plan.primary { background: var(--gold); color: #0a0a0a; }
+    .btn-plan.primary:hover { background: #ffc93c; }
+    .btn-plan.outline { border: 1px solid var(--border); color: var(--text); background: transparent; }
+    .btn-plan.outline:hover { background: var(--surface); border-color: var(--muted2); }
+
+    /* ── FAQ ─────────────────────────────────────────────────── */
+    .faq-grid { display: flex; flex-direction: column; gap: 14px; max-width: 760px; }
+    .faq-item {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; overflow: hidden;
+    }
+    .faq-q {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 18px 22px; cursor: pointer; font-weight: 600; font-size: 15px;
+      user-select: none; gap: 16px;
+    }
+    .faq-q:hover { color: var(--gold); }
+    .faq-chevron { color: var(--muted2); font-size: 18px; transition: transform .2s; flex-shrink: 0; }
+    .faq-item.open .faq-chevron { transform: rotate(180deg); }
+    .faq-a {
+      display: none; padding: 0 22px 18px; color: var(--muted2);
+      font-size: 14px; line-height: 1.7; border-top: 1px solid var(--border);
+      padding-top: 16px;
+    }
+    .faq-item.open .faq-a { display: block; }
+
+    /* ── TESTIMONIALS ───────────────────────────────────────── */
+    .testi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
+    .testi-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 14px; padding: 24px;
+    }
+    .testi-stars { color: var(--gold); font-size: 14px; margin-bottom: 12px; }
+    .testi-text { font-size: 14px; color: var(--muted2); line-height: 1.65; margin-bottom: 16px; font-style: italic; }
+    .testi-author { display: flex; align-items: center; gap: 10px; }
+    .testi-avatar {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: var(--gold-bg); border: 1px solid rgba(240,180,41,.25);
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 800; font-size: 14px; color: var(--gold);
+    }
+    .testi-name { font-weight: 700; font-size: 14px; }
+    .testi-role { font-size: 12px; color: var(--muted2); }
+
+    /* ── GUARANTEE ───────────────────────────────────────────── */
+    .guarantee-box {
+      max-width: 720px; margin: 0 auto; text-align: center;
+      background: var(--card); border: 1px solid rgba(240,180,41,.25);
+      border-radius: 20px; padding: 50px 40px;
+    }
+    .guarantee-icon { font-size: 52px; margin-bottom: 20px; }
+    .guarantee-title { font-size: 1.8rem; font-weight: 800; margin-bottom: 14px; }
+    .guarantee-text { color: var(--muted2); font-size: 15px; line-height: 1.7; }
+
+    /* ── CTA FINAL ───────────────────────────────────────────── */
+    .cta-final {
+      text-align: center; padding: 120px 40px;
+      background: radial-gradient(ellipse at 50% 0%, rgba(240,180,41,.08) 0%, transparent 60%);
+    }
+    .cta-final h2 { margin-bottom: 18px; }
+    .cta-final p { color: var(--muted2); margin-bottom: 40px; font-size: 1.05rem; }
+
+    /* ── FOOTER ──────────────────────────────────────────────── */
+    footer {
+      background: var(--surface); border-top: 1px solid var(--border);
+      padding: 40px; text-align: center; color: var(--muted2); font-size: 13px;
+    }
+    footer strong { color: var(--gold); }
+    .footer-links { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; margin-bottom: 16px; }
+    .footer-links a { color: var(--muted2); text-decoration: none; }
+    .footer-links a:hover { color: var(--text); }
+    .disclaimer {
+      margin-top: 16px; font-size: 11px; color: var(--muted); max-width: 700px;
+      margin-left: auto; margin-right: auto; line-height: 1.6;
+    }
+
+    /* ── RESPONSIVE ──────────────────────────────────────────── */
+    @media(max-width:768px){
+      nav.topnav { padding: 0 20px; }
+      section { padding: 70px 20px; }
+      .stats-bar { padding: 40px 20px; }
+      h1 { letter-spacing: -.8px; }
+      .nav-links .nav-hide-mobile { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── NAV ── -->
+<nav class="topnav">
+  <a href="#" class="nav-logo">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+      <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>
+    </svg>
+    Trading Algo Pro
+  </a>
+  <div class="nav-links">
+    <a href="#features" class="nav-hide-mobile">Recursos</a>
+    <a href="#como-funciona" class="nav-hide-mobile">Como Funciona</a>
+    <a href="#precos" class="nav-hide-mobile">Preços</a>
+    <a href="#faq" class="nav-hide-mobile">FAQ</a>
+    <a href="#precos" class="nav-cta">Começar Agora →</a>
+  </div>
+</nav>
+
+<!-- ── HERO ── -->
+<section class="hero">
+  <div class="hero-glow"></div>
+  <div class="hero-badge"><span></span> Sistema ativo em tempo real</div>
+  <h1>Sinais de Trading com <em>IA</em><br>que Abrem Ordens no MT5</h1>
+  <p class="hero-sub">
+    Análise técnica profissional em BTC, Ouro, EUR/USD e USD/JPY.
+    Score ponderado por 10+ indicadores. Bot que abre posições automaticamente — sem você precisar estar na tela.
+  </p>
+  <div class="hero-cta-group">
+    <a href="#precos" class="btn-primary">Assinar Agora — 7 dias grátis</a>
+    <a href="#como-funciona" class="btn-secondary">Ver como funciona</a>
+  </div>
+  <p class="hero-note">Cancele quando quiser · Sem fidelidade · Suporte via WhatsApp</p>
+</section>
+
+<!-- ── TICKER ── -->
+<div class="ticker-wrap">
+  <div class="ticker-inner" id="tickerInner">
+    <!-- filled by JS -->
+  </div>
+</div>
+
+<!-- ── STATS ── -->
+<div class="stats-bar">
+  <div class="stats-inner">
+    <div class="stat-item"><div class="stat-num">4</div><div class="stat-label">Ativos monitorados 24/7</div></div>
+    <div class="stat-item"><div class="stat-num">10+</div><div class="stat-label">Indicadores por sinal</div></div>
+    <div class="stat-item"><div class="stat-num">15s</div><div class="stat-label">Atualização dos dados</div></div>
+    <div class="stat-item"><div class="stat-num">3×</div><div class="stat-label">Tiers de risco automático</div></div>
+  </div>
+</div>
+
+<!-- ── FEATURES ── -->
+<section id="features">
+  <div class="section-inner">
+    <div class="section-label">Recursos</div>
+    <h2>Tudo que você precisa<br>para operar com precisão</h2>
+    <p class="section-sub">Do sinal ao trade aberto no MT5, totalmente automatizado. Sem planilha, sem análise manual, sem perder entrada.</p>
+    <div class="feat-grid">
+      <div class="feat-card">
+        <div class="feat-icon">📊</div>
+        <div class="feat-title">Score Ponderado Multi-Indicador</div>
+        <div class="feat-desc">Cada sinal recebe uma pontuação de 0 a 17 com base em EMA, RSI, ADX, MACD, Bollinger, ATR, sessão de mercado e contexto de tendência. Sem ruído — só sinais de qualidade.</div>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon">🤖</div>
+        <div class="feat-title">Bot MT5 com Auto-Open</div>
+        <div class="feat-desc">Quando o score ultrapassa seu threshold, o bot conecta direto ao MetaTrader 5 via webhook e abre a posição com SL/TP calculados automaticamente. Você dorme, o bot trabalha.</div>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon">⚖️</div>
+        <div class="feat-title">Gestão de Risco em 3 Tiers</div>
+        <div class="feat-desc">Sinais fracos = 0,5% do equity. Médios = 0,75%. Fortes = 1,00%. O sistema calcula o lot size exato baseado no SL para manter o risco constante independente do ativo.</div>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon">🛡️</div>
+        <div class="feat-title">Filtros Anti-Ruído</div>
+        <div class="feat-desc">Filtros de contexto (tendência, sessão de mercado, volatilidade excessiva) bloqueiam sinais em condições inadequadas. Menos operações, mas com muito mais acurácia.</div>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon">🔬</div>
+        <div class="feat-title">Backtesting Integrado</div>
+        <div class="feat-desc">Teste qualquer parâmetro em dados históricos reais. Visualize a equity curve, win rate, profit factor e máximo drawdown antes de ligar o bot em conta real.</div>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon">🔔</div>
+        <div class="feat-title">Alertas por Telegram</div>
+        <div class="feat-desc">Receba notificação instantânea quando um sinal é gerado, quando o bot abre uma posição e quando ela é fechada. Acompanhe tudo pelo celular, em tempo real.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── DEMO SIGNAL ── -->
+<section class="demo-section">
+  <div class="section-inner">
+    <div class="section-label">Painel VIP</div>
+    <h2>Veja como é o sinal em tempo real</h2>
+    <p class="section-sub">Interface limpa, dados densos, zero distração. Tudo que você precisa ver de uma vez.</p>
+    <div class="demo-grid">
+      <div>
+        <div class="signal-card-demo buy" style="margin-bottom:16px">
+          <div class="sig-header">
+            <div class="sig-asset">XAU/USD · Ouro</div>
+            <div class="sig-dir-badge buy">▲ COMPRA</div>
+          </div>
+          <div class="sig-score-row">
+            <div class="sig-score-num buy">13</div>
+            <div class="sig-score-max">/ 16</div>
+            <div class="sig-score-label">· Sinal muito forte</div>
+          </div>
+          <div class="sig-bars">
+            <div class="sig-bar filled buy"></div><div class="sig-bar filled buy"></div>
+            <div class="sig-bar filled buy"></div><div class="sig-bar filled buy"></div>
+            <div class="sig-bar filled buy"></div><div class="sig-bar filled buy"></div>
+            <div class="sig-bar filled buy"></div><div class="sig-bar filled buy"></div>
+            <div class="sig-bar filled buy"></div><div class="sig-bar filled buy"></div>
+            <div class="sig-bar filled buy"></div><div class="sig-bar filled buy"></div>
+            <div class="sig-bar filled buy"></div><div class="sig-bar"></div>
+            <div class="sig-bar"></div><div class="sig-bar"></div>
+          </div>
+          <div class="sig-levels">
+            <div class="sig-level"><div class="sig-level-label">Entrada</div><div class="sig-level-val entry">3 318,40</div></div>
+            <div class="sig-level"><div class="sig-level-label">Stop Loss</div><div class="sig-level-val sl">3 308,20</div></div>
+            <div class="sig-level"><div class="sig-level-label">Take Profit</div><div class="sig-level-val tp">3 338,60</div></div>
+          </div>
+          <div class="sig-indicators">
+            <span class="sig-tag ok">EMA Alinhada ✓</span>
+            <span class="sig-tag ok">RSI 58 ✓</span>
+            <span class="sig-tag ok">ADX 28 ✓</span>
+            <span class="sig-tag ok">Sessão London ✓</span>
+            <span class="sig-tag ok">MACD Crossover ✓</span>
+            <span class="sig-tag warn">Volume med.</span>
+          </div>
+          <div class="sig-bot-badge">
+            <div class="sig-bot-dot"></div>
+            <div class="sig-bot-text">Bot abriu 0,72 lots · Ticket #434255373 · Risk 1.00%</div>
+          </div>
+        </div>
+
+        <div class="signal-card-demo sell">
+          <div class="sig-header">
+            <div class="sig-asset">USD/JPY</div>
+            <div class="sig-dir-badge sell">▼ VENDA</div>
+          </div>
+          <div class="sig-score-row">
+            <div class="sig-score-num sell">9</div>
+            <div class="sig-score-max">/ 15</div>
+            <div class="sig-score-label">· Sinal moderado</div>
+          </div>
+          <div class="sig-bars">
+            <div class="sig-bar filled sell"></div><div class="sig-bar filled sell"></div>
+            <div class="sig-bar filled sell"></div><div class="sig-bar filled sell"></div>
+            <div class="sig-bar filled sell"></div><div class="sig-bar filled sell"></div>
+            <div class="sig-bar filled sell"></div><div class="sig-bar filled sell"></div>
+            <div class="sig-bar filled sell"></div><div class="sig-bar"></div>
+            <div class="sig-bar"></div><div class="sig-bar"></div>
+            <div class="sig-bar"></div><div class="sig-bar"></div>
+            <div class="sig-bar"></div>
+          </div>
+          <div class="sig-levels">
+            <div class="sig-level"><div class="sig-level-label">Entrada</div><div class="sig-level-val entry">155,840</div></div>
+            <div class="sig-level"><div class="sig-level-label">Stop Loss</div><div class="sig-level-val sl">156,150</div></div>
+            <div class="sig-level"><div class="sig-level-label">Take Profit</div><div class="sig-level-val tp">155,220</div></div>
+          </div>
+          <div class="sig-indicators">
+            <span class="sig-tag ok">EMA Bearish ✓</span>
+            <span class="sig-tag ok">RSI 42 ✓</span>
+            <span class="sig-tag warn">ADX 19 ~</span>
+            <span class="sig-tag ok">Sessão Tokyo ✓</span>
+          </div>
+          <div class="sig-bot-badge" style="background:rgba(239,83,80,.06);border-color:rgba(239,83,80,.2)">
+            <div class="sig-bot-dot" style="background:var(--gold)"></div>
+            <div class="sig-bot-text" style="color:var(--gold)">Aguardando aprovação manual · Risk 0.50%</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="demo-info-list">
+        <div class="demo-info-item">
+          <div class="demo-info-icon">🎯</div>
+          <div>
+            <div class="demo-info-title">Score = qualidade do sinal</div>
+            <div class="demo-info-desc">Quanto mais indicadores convergem na mesma direção, maior o score. Você define o threshold mínimo para o bot agir — controle total do seu nível de risco.</div>
+          </div>
+        </div>
+        <div class="demo-info-item">
+          <div class="demo-info-icon">📐</div>
+          <div>
+            <div class="demo-info-title">SL/TP calculados por ATR</div>
+            <div class="demo-info-desc">Stop Loss e Take Profit não são fixos — são calculados com base na volatilidade atual do ativo via ATR. Isso evita stops muito curtos ou TPs impossíveis de atingir.</div>
+          </div>
+        </div>
+        <div class="demo-info-item">
+          <div class="demo-info-icon">💹</div>
+          <div>
+            <div class="demo-info-title">4 ativos, 1 painel</div>
+            <div class="demo-info-desc">BTC/USD, XAU/USD (Ouro), EUR/USD e USD/JPY — tudo numa interface única com atualização automática a cada 15 segundos. Sem precisar alternar entre plataformas.</div>
+          </div>
+        </div>
+        <div class="demo-info-item">
+          <div class="demo-info-icon">🔒</div>
+          <div>
+            <div class="demo-info-title">Idempotência & segurança</div>
+            <div class="demo-info-desc">O bot nunca abre a mesma posição duas vezes. Cada trade tem um ID único. Se o servidor reiniciar, nenhum duplicate é gerado. Token de autenticação no webhook.</div>
+          </div>
+        </div>
+        <div class="demo-info-item">
+          <div class="demo-info-icon">🧪</div>
+          <div>
+            <div class="demo-info-title">Backtester com equity curve</div>
+            <div class="demo-info-desc">Rode o mesmo algoritmo nos últimos meses de dados históricos e veja a curva de equity, win rate, profit factor e drawdown máximo antes de usar em conta real.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── HOW IT WORKS ── -->
+<section id="como-funciona">
+  <div class="section-inner">
+    <div class="section-label">Passo a passo</div>
+    <h2>De zero ao primeiro trade em minutos</h2>
+    <p class="section-sub">Sem instalar nada complexo. Você só precisa do MT5 aberto e internet.</p>
+    <div class="steps-grid">
+      <div class="step-card">
+        <div class="step-num">1</div>
+        <div class="step-title">Assine o plano</div>
+        <div class="step-desc">Escolha o plano ideal, faça o pagamento e receba acesso imediato ao painel e ao bot.</div>
+      </div>
+      <div class="step-card">
+        <div class="step-num">2</div>
+        <div class="step-title">Configure em 5 minutos</div>
+        <div class="step-desc">Preencha seu login MT5 e defina o threshold de score. Guia em vídeo + suporte no WhatsApp para qualquer dúvida.</div>
+      </div>
+      <div class="step-card">
+        <div class="step-num">3</div>
+        <div class="step-title">Rode o backtest</div>
+        <div class="step-desc">Teste os parâmetros no histórico do ativo que você quer operar. Valide a estratégia antes de ligar o bot real.</div>
+      </div>
+      <div class="step-card">
+        <div class="step-num">4</div>
+        <div class="step-title">Ative o auto-open</div>
+        <div class="step-desc">Ligue o bot, coloque o MT5 em segundo plano e deixe o sistema trabalhar por você 24/7.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── TESTIMONIALS ── -->
+<section style="background:var(--surface)">
+  <div class="section-inner">
+    <div class="section-label">Depoimentos</div>
+    <h2>O que dizem os usuários</h2>
+    <p class="section-sub">Traders reais, resultados reais.</p>
+    <div class="testi-grid">
+      <div class="testi-card">
+        <div class="testi-stars">★★★★★</div>
+        <div class="testi-text">"Usava três indicadores separados antes. Agora o score me diz em 2 segundos se o trade vale a pena. Sinal 12+ no ouro virou minha regra de ouro."</div>
+        <div class="testi-author">
+          <div class="testi-avatar">R</div>
+          <div><div class="testi-name">Rafael M.</div><div class="testi-role">Trader Forex · SP</div></div>
+        </div>
+      </div>
+      <div class="testi-card">
+        <div class="testi-stars">★★★★★</div>
+        <div class="testi-text">"O bot abriu e fechou 4 operações enquanto eu estava no trabalho. Cheguei em casa e o MT5 tinha 3 trades vencedores. Isso muda o jogo."</div>
+        <div class="testi-author">
+          <div class="testi-avatar">C</div>
+          <div><div class="testi-name">Carla V.</div><div class="testi-role">Day Trader · RJ</div></div>
+        </div>
+      </div>
+      <div class="testi-card">
+        <div class="testi-stars">★★★★☆</div>
+        <div class="testi-text">"O backtester salvou minha conta. Testei o threshold 7 e vi que o drawdown era alto demais. Coloquei em 9 e a curva ficou muito mais suave. Recomendo."</div>
+        <div class="testi-author">
+          <div class="testi-avatar">F</div>
+          <div><div class="testi-name">Fábio T.</div><div class="testi-role">Swing Trader · MG</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── PRICING ── -->
+<section id="precos" class="pricing-section">
+  <div class="section-inner">
+    <div class="section-label">Planos</div>
+    <h2>Escolha o plano certo para você</h2>
+    <p class="section-sub">Comece no básico e suba quando quiser. Sem fidelidade.</p>
+    <div class="pricing-grid">
+
+      <!-- BÁSICO -->
+      <div class="price-card">
+        <div class="price-plan">Starter</div>
+        <div class="price-amount">
+          <span class="price-currency">R$</span>
+          <span class="price-num">47</span>
+          <span class="price-period">/mês</span>
+        </div>
+        <div class="price-desc">Para traders que querem os sinais e tomam as decisões eles mesmos.</div>
+        <hr class="price-divider">
+        <ul class="price-features">
+          <li><span class="ok">✓</span> <div><strong>Dashboard VIP</strong> completo</div></li>
+          <li><span class="ok">✓</span> <div>Sinais em <strong>4 ativos</strong> (BTC, Ouro, EUR/USD, JPY)</div></li>
+          <li><span class="ok">✓</span> <div>Score multi-indicador em <strong>tempo real</strong></div></li>
+          <li><span class="ok">✓</span> <div>Alertas no <strong>Telegram</strong></div></li>
+          <li><span class="ok">✓</span> <div>Backtester com equity curve</div></li>
+          <li><span class="no">✗</span> <div style="color:var(--muted)">Bot MT5 auto-open</div></li>
+        </ul>
+        <a href="#" class="btn-plan outline">Assinar Starter</a>
+      </div>
+
+      <!-- PRO EM DESTAQUE -->
+      <div class="price-card featured">
+        <div class="price-badge">🔥 Mais popular</div>
+        <div class="price-plan">Pro</div>
+        <div class="price-amount">
+          <span class="price-currency">R$</span>
+          <span class="price-num">97</span>
+          <span class="price-period">/mês</span>
+        </div>
+        <div class="price-desc">O mais escolhido. Bot ligado, risco calibrado, tudo automático.</div>
+        <hr class="price-divider">
+        <ul class="price-features">
+          <li><span class="ok">✓</span> <div><strong>Tudo do Starter</strong></div></li>
+          <li><span class="ok">✓</span> <div>Bot MT5 <strong>auto-open</strong> de posições</div></li>
+          <li><span class="ok">✓</span> <div>Gestão de risco em <strong>3 tiers automáticos</strong></div></li>
+          <li><span class="ok">✓</span> <div>Lot size calculado por <strong>equity real</strong></div></li>
+          <li><span class="ok">✓</span> <div>Filtro de filling mode automático</div></li>
+          <li><span class="ok">✓</span> <div>Suporte prioritário WhatsApp</div></li>
+        </ul>
+        <a href="#" class="btn-plan primary">Assinar Pro — 7 dias grátis</a>
+      </div>
+
+      <!-- ELITE -->
+      <div class="price-card">
+        <div class="price-plan">Elite</div>
+        <div class="price-amount">
+          <span class="price-currency">R$</span>
+          <span class="price-num">197</span>
+          <span class="price-period">/mês</span>
+        </div>
+        <div class="price-desc">Para quem opera múltiplas contas ou quer configurações avançadas.</div>
+        <hr class="price-divider">
+        <ul class="price-features">
+          <li><span class="ok">✓</span> <div><strong>Tudo do Pro</strong></div></li>
+          <li><span class="ok">✓</span> <div>Até <strong>3 contas MT5</strong> simultâneas</div></li>
+          <li><span class="ok">✓</span> <div>Configuração <strong>personalizada</strong> de parâmetros</div></li>
+          <li><span class="ok">✓</span> <div>Webhook <strong>multi-broker</strong></div></li>
+          <li><span class="ok">✓</span> <div>Onboarding <strong>1:1 via videochamada</strong></div></li>
+          <li><span class="ok">✓</span> <div>Acesso antecipado a novos recursos</div></li>
+        </ul>
+        <a href="#" class="btn-plan outline">Assinar Elite</a>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ── GUARANTEE ── -->
+<section>
+  <div class="section-inner">
+    <div class="guarantee-box">
+      <div class="guarantee-icon">🛡️</div>
+      <h2 class="guarantee-title">Garantia de 7 dias</h2>
+      <p class="guarantee-text">
+        Você tem 7 dias para usar o sistema, testar os sinais, rodar o backtest, ligar o bot.
+        Se por qualquer motivo não gostar, devolvemos 100% do valor — sem perguntas, sem burocracia.
+        Nenhum risco para você.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ── FAQ ── -->
+<section id="faq" style="background:var(--surface)">
+  <div class="section-inner">
+    <div class="section-label">Dúvidas frequentes</div>
+    <h2>FAQ</h2>
+    <p class="section-sub">Não encontrou sua dúvida? Fale conosco no WhatsApp.</p>
+    <div class="faq-grid">
+      <div class="faq-item">
+        <div class="faq-q">Preciso instalar algo no computador? <span class="faq-chevron">▾</span></div>
+        <div class="faq-a">Sim, mas é simples: o MetaTrader 5 (gratuito) e o Python (gratuito). Um script de 1 clique já configura tudo. Guia em vídeo + suporte no WhatsApp para acompanhar.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">Funciona com qualquer broker de MT5? <span class="faq-chevron">▾</span></div>
+        <div class="faq-a">Sim. O bot é compatível com qualquer broker que use MT5 — XM, Exness, IC Markets, FTMO, etc. O sistema detecta automaticamente o filling mode suportado pelo seu broker.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">O bot precisa ficar ligado 24h? <span class="faq-chevron">▾</span></div>
+        <div class="faq-a">Sim, para o auto-open funcionar o seu PC precisa estar ligado com o MT5 e o script Python rodando. Em breve teremos hospedagem em nuvem inclusa no plano VIP.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">Quais ativos são cobertos? <span class="faq-chevron">▾</span></div>
+        <div class="faq-a">BTC/USD (Bitcoin), XAU/USD (Ouro), EUR/USD e USD/JPY. Todos com análise em tempo real, score individual e bot configurável por ativo.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">O sistema garante lucro? <span class="faq-chevron">▾</span></div>
+        <div class="faq-a">Não. Nenhum sistema de trading garante lucro. Sinais são baseados em análise técnica e probabilidade. Use o backtester para entender o histórico da estratégia antes de colocar dinheiro real.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">Posso cancelar a qualquer momento? <span class="faq-chevron">▾</span></div>
+        <div class="faq-a">Sim, sem multa, sem burocracia. O acesso continua até o fim do período pago. Basta enviar mensagem no WhatsApp ou email para cancelar.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── CTA FINAL ── -->
+<section class="cta-final">
+  <div class="section-inner">
+    <h2>Pronto para operar com<br><em style="color:var(--gold)">inteligência e automação?</em></h2>
+    <p>Junte-se a traders que já usam análise de IA para tomar decisões melhores no mercado.</p>
+    <a href="#precos" class="btn-primary" style="font-size:16px;padding:16px 40px">Começar agora — 7 dias grátis →</a>
+    <p style="margin-top:16px;font-size:13px;color:var(--muted)">Cancele quando quiser · Suporte WhatsApp · Setup em menos de 10 minutos</p>
+  </div>
+</section>
+
+<!-- ── FOOTER ── -->
+<footer>
+  <div class="footer-links">
+    <a href="#">Termos de Uso</a>
+    <a href="#">Política de Privacidade</a>
+    <a href="#">Suporte</a>
+    <a href="#">WhatsApp</a>
+  </div>
+  <p><strong>Trading Algo Pro</strong> · Sistema de sinais e automação MT5</p>
+  <p class="disclaimer">
+    ⚠️ Trading envolve risco de perda financeira. Resultados passados não garantem resultados futuros.
+    Este sistema é uma ferramenta de análise técnica, não uma consultoria de investimentos.
+    Opere apenas com valores que você pode se dar ao luxo de perder.
+  </p>
+</footer>
+
+<script>
+  // ── TICKER FILL ─────────────────────────────────────────────────────
+  const tickers = [
+    { symbol: 'BTC/USD',  score: '14/17', dir: 'BUY',     cls: 'buy'     },
+    { symbol: 'XAU/USD',  score: '13/16', dir: 'COMPRA',  cls: 'buy'     },
+    { symbol: 'EUR/USD',  score: '6/14',  dir: 'NEUTRO',  cls: 'neutral' },
+    { symbol: 'USD/JPY',  score: '9/15',  dir: 'VENDA',   cls: 'sell'    },
+    { symbol: 'BTC/USD',  score: '12/17', dir: 'BUY',     cls: 'buy'     },
+    { symbol: 'XAU/USD',  score: '10/16', dir: 'COMPRA',  cls: 'buy'     },
+    { symbol: 'EUR/USD',  score: '8/14',  dir: 'BUY',     cls: 'buy'     },
+    { symbol: 'USD/JPY',  score: '11/15', dir: 'VENDA',   cls: 'sell'    },
+  ];
+
+  function buildTicker(items) {
+    return items.map(t => `
+      <div class="ticker-item">
+        <span class="ticker-symbol">${t.symbol}</span>
+        <span class="ticker-score ${t.cls}">${t.score}</span>
+        <span class="ticker-label ${t.cls}">${t.dir}</span>
+      </div>
+    `).join('');
+  }
+
+  const tickerInner = document.getElementById('tickerInner');
+  // duplicate for seamless loop
+  tickerInner.innerHTML = buildTicker(tickers) + buildTicker(tickers);
+
+  // ── FAQ TOGGLE ───────────────────────────────────────────────────────
+  document.querySelectorAll('.faq-q').forEach(q => {
+    q.addEventListener('click', () => {
+      const item = q.closest('.faq-item');
+      const isOpen = item.classList.contains('open');
+      document.querySelectorAll('.faq-item').forEach(i => i.classList.remove('open'));
+      if (!isOpen) item.classList.add('open');
+    });
+  });
+
+  // ── SMOOTH NAV ───────────────────────────────────────────────────────
+  document.querySelectorAll('a[href^="#"]').forEach(a => {
+    a.addEventListener('click', e => {
+      const target = document.querySelector(a.getAttribute('href'));
+      if (target) { e.preventDefault(); target.scrollIntoView({ behavior: 'smooth' }); }
+    });
+  });
+</script>
+</body>
+</html>

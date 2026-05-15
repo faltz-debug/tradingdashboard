@@ -1,0 +1,2955 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Área VIP — Trading Dashboard</title>
+  <style>
+    :root {
+      --bg:       #0d0d0d;
+      --surface:  #141414;
+      --card:     #1a1a1a;
+      --border:   #2a2a2a;
+      --gold:     #f0b429;
+      --gold-dim: #7a5c14;
+      --green:    #26a69a;
+      --red:      #ef5350;
+      --blue:     #5c9eff;
+      --purple:   #ab7ae0;
+      --text:     #e0e0e0;
+      --muted:    #666;
+      --buy:      #26a69a;
+      --sell:     #ef5350;
+      --neutral:  #888;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; min-height: 100vh; }
+
+    /* ── NAV ── */
+    .topbar { background: var(--surface); border-bottom: 1px solid var(--border); padding: 10px 20px; display: flex; align-items: center; gap: 16px; position: sticky; top: 0; z-index: 100; }
+    .topbar .logo { font-weight: 700; font-size: 16px; color: var(--gold); display: flex; align-items: center; gap: 6px; }
+    .topbar nav { display: flex; gap: 8px; margin-left: auto; }
+    .topbar nav a { color: var(--muted); text-decoration: none; padding: 6px 12px; border-radius: 6px; font-size: 13px; transition: all .15s; }
+    .topbar nav a:hover { color: var(--text); background: var(--card); }
+    .topbar nav a.active { color: var(--gold); background: rgba(240,180,41,.08); }
+
+    /* ── SCANNER STRIP ── */
+    .scanner-strip {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 8px 20px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .scanner-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; margin-right: 4px; white-space: nowrap; }
+    .scanner-card {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--card);
+      cursor: pointer;
+      transition: all .15s;
+      min-width: 160px;
+    }
+    .scanner-card:hover { border-color: var(--gold); }
+    .scanner-card.selected { border-color: var(--gold); background: rgba(240,180,41,.06); }
+    .scanner-card.VALID_SIGNAL  { border-color: var(--green); background: rgba(38,166,154,.08); }
+    .scanner-card.PARTIAL_SIGNAL{ border-color: var(--gold);  background: rgba(240,180,41,.06); }
+    .scanner-card.CONTEXT_BLOCKED { border-color: var(--red); background: rgba(239,83,80,.08); }
+    .sc-name  { font-weight: 700; font-size: 12px; }
+    .sc-score { font-size: 11px; color: var(--muted); }
+    .sc-dir   { font-size: 11px; font-weight: 700; }
+    .sc-dir.BUY  { color: var(--buy); }
+    .sc-dir.SELL { color: var(--sell); }
+    .sc-dir.NEUTRAL { color: var(--muted); }
+    .sc-badge {
+      font-size: 9px;
+      padding: 2px 6px;
+      border-radius: 50px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .sc-badge.VALID_SIGNAL   { background: rgba(38,166,154,.2);  color: var(--green); }
+    .sc-badge.PARTIAL_SIGNAL { background: rgba(240,180,41,.2);  color: var(--gold); }
+    .sc-badge.NO_SIGNAL      { background: rgba(102,102,102,.15);color: var(--muted); }
+    .sc-badge.NEWS_BLOCKED   { background: rgba(239,83,80,.15);  color: var(--red); }
+    .sc-badge.CONTEXT_BLOCKED{ background: rgba(239,83,80,.15);  color: var(--red); }
+    .sc-badge.NO_BIAS        { background: rgba(92,158,255,.12); color: var(--blue); }
+    .sc-badge.loading        { background: rgba(102,102,102,.1); color: var(--muted); }
+    .sc-badge.ERROR          { background: rgba(239,83,80,.1);   color: var(--red); }
+
+    /* countdown + auto-refresh */
+    .refresh-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-left: auto;
+      flex-wrap: wrap;
+    }
+    .countdown-ring {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .countdown-val { color: var(--gold); font-weight: 700; font-variant-numeric: tabular-nums; min-width: 30px; }
+    .toggle-auto {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: var(--muted);
+      cursor: pointer;
+      user-select: none;
+    }
+    .toggle-auto input { accent-color: var(--gold); cursor: pointer; }
+
+    /* ── LAYOUT ── */
+    .container { max-width: 1200px; margin: 0 auto; padding: 18px 16px; display: grid; gap: 14px; }
+
+    /* ── CONTROLS ── */
+    .controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    .controls label { color: var(--muted); font-size: 12px; }
+    .controls select { background: var(--card); border: 1px solid var(--border); color: var(--text); padding: 7px 12px; border-radius: 7px; font-size: 13px; cursor: pointer; }
+    .token-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,.03);
+      color: var(--muted);
+      font-size: 11px;
+      white-space: nowrap;
+    }
+    .token-chip.ok { border-color: rgba(38,166,154,.35); color: var(--green); }
+    .token-chip.missing { border-color: rgba(239,83,80,.25); color: var(--red); }
+    .btn-refresh { background: var(--gold); color: #000; border: none; padding: 7px 18px; border-radius: 7px; font-weight: 700; font-size: 13px; cursor: pointer; transition: opacity .15s; margin-left: auto; }
+    .btn-refresh:hover { opacity: .85; }
+    .btn-refresh:disabled { opacity: .5; cursor: default; }
+    .last-update { color: var(--muted); font-size: 12px; }
+    .auth-actions { display:flex; align-items:center; gap:10px; margin-left:auto; }
+    .auth-chip {
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding:7px 12px;
+      border-radius:999px;
+      border:1px solid rgba(240,180,41,.28);
+      background:rgba(240,180,41,.08);
+      color:var(--gold);
+      font-size:11px;
+      font-weight:700;
+      white-space:nowrap;
+    }
+    .auth-chip.ok { border-color: rgba(38,166,154,.35); color: var(--green); background: rgba(38,166,154,.08); }
+    .auth-chip.missing { border-color: rgba(239,83,80,.25); color: var(--red); background: rgba(239,83,80,.08); }
+    .btn-auth {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 7px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .btn-auth.primary { background: linear-gradient(135deg,var(--gold-dim),var(--gold)); color:#000; border:none; }
+    .btn-auth.danger { border-color: rgba(239,83,80,.25); color: var(--red); }
+    .btn-auth:hover { opacity: .88; }
+    .auth-panel {
+      display:grid;
+      grid-template-columns: 1.1fr .9fr;
+      gap:14px;
+      align-items:stretch;
+      background: linear-gradient(135deg, rgba(240,180,41,.08), rgba(255,255,255,.02));
+    }
+    .auth-panel.hidden { display:none; }
+    .auth-copy { display:flex; flex-direction:column; gap:10px; justify-content:center; }
+    .auth-kicker { font-size:11px; text-transform:uppercase; letter-spacing:.9px; color:var(--gold); }
+    .auth-title { font-size:24px; font-weight:800; color:var(--text); }
+    .auth-text { color:var(--muted); line-height:1.6; font-size:13px; }
+    .auth-user-meta { display:flex; gap:8px; flex-wrap:wrap; }
+    .auth-pill {
+      padding:5px 10px;
+      border-radius:999px;
+      background:rgba(255,255,255,.04);
+      border:1px solid var(--border);
+      color:var(--muted);
+      font-size:11px;
+    }
+    .auth-form {
+      background: rgba(0,0,0,.16);
+      border:1px solid var(--border);
+      border-radius:12px;
+      padding:16px;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+    }
+    .auth-form h3 { font-size:15px; color:var(--text); }
+    .auth-form p { color:var(--muted); font-size:12px; line-height:1.5; }
+    .auth-form input {
+      width:100%;
+      background:var(--surface);
+      border:1px solid var(--border);
+      color:var(--text);
+      padding:10px 12px;
+      border-radius:8px;
+      font-size:13px;
+    }
+    .auth-form input:focus { outline:none; border-color:var(--gold); }
+    .auth-row { display:flex; gap:10px; flex-wrap:wrap; }
+    .auth-row > * { flex:1; min-width:160px; }
+    .auth-msg { min-height:18px; font-size:12px; color:var(--muted); }
+    .auth-msg.ok { color:var(--green); }
+    .auth-msg.err { color:var(--red); }
+    .vip-shell.locked .scanner-strip,
+    .vip-shell.locked .container {
+      opacity:.35;
+      pointer-events:none;
+      filter:grayscale(.18);
+    }
+    .vip-shell.locked .auth-panel {
+      opacity:1;
+      pointer-events:auto;
+      filter:none;
+    }
+
+    /* ── CARDS ── */
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    @media (max-width: 768px) { .grid-2, .grid-4 { grid-template-columns: 1fr; } }
+    @media (max-width: 960px) { .grid-4 { grid-template-columns: 1fr 1fr; } }
+
+    /* ── MOBILE ── */
+    @media (max-width: 768px) {
+      .topbar { padding: 8px 12px; gap: 8px; }
+      .topbar nav a { padding: 5px 8px; font-size: 11px; }
+      .container { padding: 10px 10px; gap: 10px; }
+      .card { padding: 14px 12px; }
+      .status-hero { padding: 14px; gap: 12px; }
+      .tab-btns { flex-wrap: wrap; }
+      .tab-btn { flex: 1; min-width: 100px; text-align: center; }
+      .scanner-strip { overflow-x: auto; flex-wrap: nowrap; }
+      .sizing-grid { grid-template-columns: 1fr 1fr; }
+      .levels-grid  { grid-template-columns: 1fr; }
+      .equity-chart-wrap canvas { max-height: 200px !important; }
+      #tabJournalContent > div:nth-child(2) { grid-template-columns: 1fr !important; }
+      #journalStreaks > div { grid-template-columns: 1fr 1fr !important; }
+      .auth-panel { grid-template-columns: 1fr; }
+      .auth-actions { width:100%; margin-left:0; justify-content:space-between; }
+    }
+
+    @media (max-width: 480px) {
+      .topbar .logo span:not(:first-child) { display: none; }
+      .tab-btn { font-size: 11px; padding: 6px 8px; }
+      .sizing-grid { grid-template-columns: 1fr 1fr; }
+    }
+
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
+    .card-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin-bottom: 14px; }
+
+    /* ── STATUS HERO ── */
+    .status-hero { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px 22px; display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+    .status-badge { display: inline-flex; align-items: center; gap: 8px; padding: 10px 20px; border-radius: 50px; font-weight: 700; font-size: 15px; }
+    .status-badge.VALID_SIGNAL   { background: rgba(38,166,154,.15); color: var(--green); border: 1px solid var(--green); }
+    .status-badge.PARTIAL_SIGNAL { background: rgba(240,180,41,.12); color: var(--gold);  border: 1px solid var(--gold); }
+    .status-badge.NO_SIGNAL      { background: rgba(102,102,102,.12);color: var(--muted); border: 1px solid var(--border); }
+    .status-badge.NEWS_BLOCKED   { background: rgba(239,83,80,.12);  color: var(--red);   border: 1px solid var(--red); }
+    .status-badge.CONTEXT_BLOCKED{ background: rgba(239,83,80,.12);  color: var(--red);   border: 1px solid var(--red); }
+    .status-badge.NO_BIAS        { background: rgba(92,158,255,.10); color: var(--blue);  border: 1px solid var(--blue); }
+    .status-badge.loading        { background: rgba(102,102,102,.08);color: var(--muted); border: 1px solid var(--border); }
+
+    .direction-pill { padding: 6px 16px; border-radius: 50px; font-weight: 800; font-size: 15px; }
+    .direction-pill.BUY     { background: rgba(38,166,154,.2);  color: var(--buy); }
+    .direction-pill.SELL    { background: rgba(239,83,80,.2);   color: var(--sell); }
+    .direction-pill.NEUTRAL { background: rgba(136,136,136,.15);color: var(--neutral); }
+
+    .score-ring { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+    .score-ring .score-val { font-size: 26px; font-weight: 800; color: var(--gold); }
+    .score-ring .score-label { font-size: 10px; color: var(--muted); text-transform: uppercase; }
+    .reason-text { flex: 1; min-width: 200px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+
+    /* ── CHECKLIST ── */
+    .checklist { display: flex; flex-direction: column; gap: 10px; }
+    .check-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 8px; background: rgba(255,255,255,.025); border: 1px solid transparent; transition: border-color .15s; }
+    .check-row.pass    { border-color: rgba(38,166,154,.25); }
+    .check-row.fail    { border-color: rgba(239,83,80,.15); }
+    .check-row.warn    { border-color: rgba(240,180,41,.2); }
+    .check-row.neutral { border-color: rgba(255,255,255,.06); opacity: .7; }
+    .check-icon { font-size: 18px; min-width: 22px; text-align: center; }
+    .check-info { flex: 1; }
+    .check-name { font-size: 13px; font-weight: 600; }
+    .check-desc { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .check-value { font-size: 12px; font-weight: 700; }
+    .check-value.pass    { color: var(--green); }
+    .check-value.fail    { color: var(--red); }
+    .check-value.warn    { color: var(--gold); }
+    .check-value.neutral { color: var(--muted); }
+
+    /* ── NÍVEIS ── */
+    .levels-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    @media (max-width: 600px) { .levels-grid { grid-template-columns: 1fr; } }
+    .level-item { text-align: center; padding: 14px 10px; border-radius: 10px; }
+    .level-item.entry { background: rgba(92,158,255,.08);  border: 1px solid rgba(92,158,255,.25); }
+    .level-item.sl    { background: rgba(239,83,80,.08);   border: 1px solid rgba(239,83,80,.25); }
+    .level-item.tp    { background: rgba(38,166,154,.08);  border: 1px solid rgba(38,166,154,.25); }
+    .level-label { font-size: 10px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin-bottom: 6px; }
+    .level-value { font-size: 20px; font-weight: 800; }
+    .level-item.entry .level-value { color: var(--blue); }
+    .level-item.sl .level-value    { color: var(--red); }
+    .level-item.tp .level-value    { color: var(--green); }
+    .level-sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+    .meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; margin-top: 14px; }
+    .meta-item { text-align: center; }
+    .meta-label { font-size: 10px; color: var(--muted); text-transform: uppercase; }
+    .meta-value { font-size: 14px; font-weight: 700; color: var(--text); }
+
+    /* ── SIZING ── */
+    .sizing-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-top: 10px; }
+    .sizing-item { background: rgba(255,255,255,.04); border: 1px solid var(--border); border-radius: 10px; padding: 12px; text-align: center; }
+    .sizing-item .s-val { font-size: 20px; font-weight: 700; margin: 4px 0; }
+    .sizing-item .s-lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; }
+    .sizing-risk-bar { margin-top: 12px; padding: 10px 14px; border-radius: 8px; font-size: 12px; font-weight: 700; }
+
+    /* ── TRADE FORM ── */
+    .trade-form { display: flex; flex-direction: column; gap: 12px; }
+    .form-row { display: flex; gap: 10px; flex-wrap: wrap; }
+    .form-group { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 100px; }
+    .form-group label { font-size: 11px; color: var(--muted); text-transform: uppercase; }
+    .form-group input, .form-group select { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 8px 10px; border-radius: 7px; font-size: 13px; }
+    .form-group input:focus, .form-group select:focus { outline: none; border-color: var(--gold); }
+    .btn-open-trade { background: var(--buy); color: #fff; border: none; padding: 9px 20px; border-radius: 7px; font-weight: 700; font-size: 13px; cursor: pointer; width: 100%; transition: opacity .15s; }
+    .btn-open-trade.sell { background: var(--sell); }
+    .btn-open-trade:hover { opacity: .85; }
+    .form-msg { font-size: 12px; color: var(--green); min-height: 18px; }
+    .form-msg.err { color: var(--red); }
+
+    /* ── TABELA ── */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    thead th { text-align: left; padding: 8px 10px; color: var(--muted); font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: .5px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    tbody tr { border-bottom: 1px solid rgba(255,255,255,.04); transition: background .1s; }
+    tbody tr:hover { background: rgba(255,255,255,.03); }
+    tbody td { padding: 9px 10px; white-space: nowrap; }
+    .dir-buy  { color: var(--buy);  font-weight: 700; }
+    .dir-sell { color: var(--sell); font-weight: 700; }
+    .pnl-pos  { color: var(--green); font-weight: 700; }
+    .pnl-neg  { color: var(--red);   font-weight: 700; }
+    .outcome-tp { color: var(--green); }
+    .outcome-sl { color: var(--red); }
+    .outcome-manual { color: var(--muted); }
+    .rr-note { display:block; margin-top:2px; font-size:10px; color: var(--gold); }
+    .audit-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 700;
+      border: 1px solid transparent;
+      white-space: nowrap;
+    }
+    .audit-pill.confirmed {
+      color: var(--green);
+      background: rgba(38,166,154,.12);
+      border-color: rgba(38,166,154,.28);
+    }
+    .audit-pill.local {
+      color: var(--gold);
+      background: rgba(240,180,41,.12);
+      border-color: rgba(240,180,41,.28);
+    }
+    .stats-note {
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.5;
+    }
+    .btn-close { background: transparent; border: 1px solid var(--border); color: var(--muted); padding: 3px 10px; border-radius: 5px; cursor: pointer; font-size: 11px; transition: all .15s; }
+    .btn-close:hover { border-color: var(--red); color: var(--red); }
+    .btn-edit-trade { background: transparent; border: 1px solid rgba(240,180,41,.35); color: var(--gold); padding: 3px 9px; border-radius: 5px; cursor: pointer; font-size: 11px; transition: all .15s; margin-right: 3px; }
+    .btn-edit-trade:hover { border-color: var(--gold); background: rgba(240,180,41,.1); }
+    .btn-del-trade { background: transparent; border: 1px solid rgba(239,83,80,.3); color: var(--red); padding: 3px 9px; border-radius: 5px; cursor: pointer; font-size: 11px; transition: all .15s; }
+    .btn-del-trade:hover { border-color: var(--red); background: rgba(239,83,80,.1); }
+    /* ── modal editar trade ── */
+    .edit-trade-modal { position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px); }
+    .edit-trade-box { background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:28px 32px;width:380px;max-width:95vw; }
+    .edit-trade-box h3 { font-size:15px;font-weight:700;color:var(--gold);margin:0 0 18px; }
+    .edit-field { margin-bottom:14px; }
+    .edit-field label { display:block;font-size:11px;color:var(--muted);margin-bottom:4px; }
+    .edit-field input, .edit-field select { width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:7px;font-size:13px;box-sizing:border-box; }
+    .edit-field input:focus, .edit-field select:focus { outline:none;border-color:var(--gold); }
+    .edit-trade-actions { display:flex;gap:10px;margin-top:20px; }
+    .edit-trade-actions button { flex:1;padding:9px;border-radius:7px;font-weight:700;font-size:13px;cursor:pointer;border:none;transition:opacity .15s; }
+    .edit-trade-actions .btn-save-edit { background:var(--gold);color:#000; }
+    .edit-trade-actions .btn-cancel-edit { background:var(--surface);color:var(--muted);border:1px solid var(--border); }
+    .edit-trade-actions button:hover { opacity:.85; }
+
+    /* ── MÉTRICAS ── */
+    .metric-card { text-align: center; }
+    .metric-val { font-size: 26px; font-weight: 800; margin-bottom: 4px; }
+    .metric-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+    .metric-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+    /* ── EQUITY CHART ── */
+    .equity-wrap { margin-top: 16px; }
+    .equity-title { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; margin-bottom: 10px; }
+    canvas#equityChart { width: 100% !important; height: 140px !important; display: block; }
+    .equity-empty { text-align: center; padding: 30px; color: var(--muted); font-size: 13px; }
+
+    /* ── MINI TABLE ── */
+    .mini-table { width: 100%; font-size: 12px; border-collapse: collapse; }
+    .mini-table th { text-align: left; color: var(--muted); font-size: 10px; text-transform: uppercase; padding: 4px 6px; }
+    .mini-table td { padding: 6px; border-top: 1px solid var(--border); }
+
+    /* ── EMPTY STATE ── */
+    .empty-state { text-align: center; padding: 28px 20px; color: var(--muted); font-size: 13px; }
+    .empty-state .emoji { font-size: 28px; margin-bottom: 8px; }
+
+    /* ── MODAL ── */
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 1000; align-items: center; justify-content: center; }
+    .modal-overlay.open { display: flex; }
+    .modal { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 24px; width: 340px; display: flex; flex-direction: column; gap: 14px; }
+    .modal h3 { font-size: 15px; }
+    .modal-btns { display: flex; gap: 10px; margin-top: 6px; }
+    .modal-btns button { flex: 1; padding: 9px; border-radius: 7px; border: none; font-weight: 700; font-size: 13px; cursor: pointer; transition: opacity .15s; }
+    .modal-btns button:hover { opacity: .85; }
+    .btn-tp     { background: var(--green); color: #fff; }
+    .btn-sl     { background: var(--red);   color: #fff; }
+    .btn-manual { background: var(--surface); color: var(--text); border: 1px solid var(--border) !important; }
+    .btn-cancel { background: var(--surface); color: var(--muted); }
+
+    /* ── SPINNER ── */
+    .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(240,180,41,.3); border-top-color: var(--gold); border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; margin-right: 6px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── SIGNAL BADGES ── */
+    .sig-status { display: inline-block; padding: 2px 8px; border-radius: 50px; font-size: 10px; font-weight: 700; }
+    .sig-status.VALID_SIGNAL   { background: rgba(38,166,154,.15);  color: var(--green); }
+    .sig-status.PARTIAL_SIGNAL { background: rgba(240,180,41,.12);  color: var(--gold); }
+    .sig-status.NO_SIGNAL      { background: rgba(136,136,136,.12); color: var(--muted); }
+    .sig-status.NEWS_BLOCKED   { background: rgba(239,83,80,.12);   color: var(--red); }
+    .sig-status.CONTEXT_BLOCKED{ background: rgba(239,83,80,.12);   color: var(--red); }
+    .sig-status.NO_BIAS        { background: rgba(92,158,255,.10);  color: var(--blue); }
+
+    .tag { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 600; }
+    .tag.buy  { background: rgba(38,166,154,.15); color: var(--buy); }
+    .tag.sell { background: rgba(239,83,80,.15);  color: var(--sell); }
+
+    /* ── TABS ── */
+    .tab-btns { display: flex; gap: 4px; margin-bottom: 14px; }
+    .tab-btn { padding: 7px 16px; border-radius: 7px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: 12px; font-weight: 600; cursor: pointer; transition: all .15s; }
+    .tab-btn.active { background: var(--gold); color: #000; border-color: var(--gold); }
+
+    /* ── PULSE (sinal válido) ── */
+    @keyframes pulse-green { 0%,100% { box-shadow: 0 0 0 0 rgba(38,166,154,.5); } 50% { box-shadow: 0 0 0 6px rgba(38,166,154,0); } }
+    .pulse { animation: pulse-green 1.8s ease-in-out infinite; }
+  </style>
+</head>
+<body class="vip-shell locked">
+
+<!-- NAV -->
+<header class="topbar">
+  <div class="logo">⭐ Área VIP</div>
+  <nav>
+    <a href="dashboard.html">📊 Dashboard</a>
+    <a href="backtester.html">🔬 Backtester</a>
+    <a href="vip.html" class="active">⭐ VIP</a>
+  </nav>
+  <div class="auth-actions">
+    <div class="auth-chip missing" id="authStatusChip">Bloqueado</div>
+    <button class="btn-auth danger" id="btnLogout" onclick="logoutVip()" style="display:none">Sair</button>
+  </div>
+</header>
+
+<!-- SCANNER STRIP -->
+<div class="scanner-strip">
+  <span class="scanner-label">📡 Scanner</span>
+  <div class="scanner-card loading" id="scan-xauusd" onclick="selectAsset('xauusd')">
+    <div><div class="sc-name">XAUUSD</div><div class="sc-score">—</div></div>
+    <div style="margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:3px">
+      <span class="sc-badge loading">...</span>
+      <span class="sc-dir NEUTRAL">—</span>
+    </div>
+  </div>
+  <div class="scanner-card loading" id="scan-btc" onclick="selectAsset('btc')">
+    <div><div class="sc-name">BTCUSD</div><div class="sc-score">—</div></div>
+    <div style="margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:3px">
+      <span class="sc-badge loading">...</span>
+      <span class="sc-dir NEUTRAL">—</span>
+    </div>
+  </div>
+  <div class="scanner-card loading" id="scan-eurusd" onclick="selectAsset('eurusd')">
+    <div><div class="sc-name">EURUSD</div><div class="sc-score">—</div></div>
+    <div style="margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:3px">
+      <span class="sc-badge loading">...</span>
+      <span class="sc-dir NEUTRAL">—</span>
+    </div>
+  </div>
+  <div class="scanner-card loading" id="scan-usdjpy" onclick="selectAsset('usdjpy')">
+    <div><div class="sc-name">USDJPY</div><div class="sc-score">—</div></div>
+    <div style="margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:3px">
+      <span class="sc-badge loading">...</span>
+      <span class="sc-dir NEUTRAL">—</span>
+    </div>
+  </div>
+  <div class="refresh-row">
+    <label class="toggle-auto">
+      <input type="checkbox" id="chkAutoRefresh" checked />
+      Auto (15 min)
+    </label>
+    <div class="countdown-ring">🕐 <span class="countdown-val" id="countdownVal">15:00</span></div>
+    <!-- Botão de override visível direto no scanner — só aparece para admin -->
+    <button id="btnScannerOverride"
+      onclick="toggleSessionBlockOverride()"
+      title="Override de bloqueios de sessão/hora&#10;Quando ativo, mostra sinais reais ignorando HARD_BLOCK_HOUR e HARD_BLOCK_SESSION"
+      style="display:none;padding:3px 10px;border-radius:14px;border:1px solid #64748b;background:rgba(100,116,139,.10);color:#64748b;font-size:11px;font-weight:700;cursor:pointer;transition:all .2s">
+      🚫 Bloq. ativo
+    </button>
+  </div>
+</div>
+
+<!-- MODAL FECHAR TRADE -->
+<div class="modal-overlay" id="closeModal">
+  <div class="modal">
+    <h3>Fechar Trade</h3>
+    <div class="form-group">
+      <label>Preço de Fechamento</label>
+      <input type="number" id="modalClosePrice" step="any" placeholder="0.00" />
+    </div>
+    <div class="modal-btns">
+      <button class="btn-tp"     onclick="submitClose('TP')">✅ TP</button>
+      <button class="btn-sl"     onclick="submitClose('SL')">❌ SL</button>
+      <button class="btn-manual" onclick="submitClose('MANUAL')">✏️ Manual</button>
+      <button class="btn-cancel" onclick="closeModal()">Cancelar</button>
+    </div>
+    <div id="modalMsg" class="form-msg"></div>
+  </div>
+</div>
+
+<!-- MODAL EDITAR TRADE -->
+<div class="edit-trade-modal" id="editTradeModal" style="display:none" onclick="if(event.target===this)closeEditTradeModal()">
+  <div class="edit-trade-box">
+    <h3>✏️ Editar Trade</h3>
+    <input type="hidden" id="editTradeId" />
+    <div class="edit-field">
+      <label>Outcome</label>
+      <select id="editTradeOutcome">
+        <option value="">— sem alterar —</option>
+        <option value="TP">TP (Take Profit)</option>
+        <option value="SL">SL (Stop Loss)</option>
+        <option value="MANUAL">Manual</option>
+        <option value="BE">Break Even</option>
+      </select>
+    </div>
+    <div class="edit-field">
+      <label>Preço de Fechamento</label>
+      <input type="number" id="editTradeClose" step="any" placeholder="ex: 78500.00" />
+    </div>
+    <div class="edit-field">
+      <label>Observação / Motivo</label>
+      <input type="text" id="editTradeReason" placeholder="ex: saí manualmente antes do TP" />
+    </div>
+    <div id="editTradeMsg" style="font-size:12px;color:var(--red);min-height:18px;margin-top:6px"></div>
+    <div class="edit-trade-actions">
+      <button class="btn-cancel-edit" onclick="closeEditTradeModal()">Cancelar</button>
+      <button class="btn-save-edit"   onclick="submitEditTrade()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="container">
+
+  <div class="card auth-panel" id="authPanel">
+    <div class="auth-copy">
+      <div class="auth-kicker">Acesso VIP</div>
+      <div class="auth-title" id="authTitle">Entre para liberar a area premium</div>
+      <div class="auth-text" id="authText">Use sua conta para acessar sinais VIP, scanner, trades e historico. O token legado continua funcionando enquanto a migracao nao termina.</div>
+      <div class="auth-user-meta" id="authUserMeta">
+        <span class="auth-pill">Login com sessao persistente</span>
+        <span class="auth-pill">Plano controla acesso VIP</span>
+        <span class="auth-pill">Fallback do token antigo mantido</span>
+      </div>
+    </div>
+    <div class="auth-form" id="loginFormCard">
+      <h3>Login</h3>
+      <p>Entre com email e senha. Se voce ainda usa o token antigo, cole-o abaixo.</p>
+      <div class="auth-row">
+        <div>
+          <input type="email" id="authEmail" placeholder="seu@email.com" autocomplete="email" />
+        </div>
+        <div>
+          <input type="password" id="authPassword" placeholder="Sua senha" autocomplete="current-password" />
+        </div>
+      </div>
+      <div class="auth-row">
+        <button class="btn-auth primary" onclick="submitLogin()">Entrar</button>
+        <button class="btn-auth" onclick="toggleLegacyToken()">Usar token antigo</button>
+      </div>
+      <div id="legacyTokenWrap" style="display:none">
+        <input type="text" id="legacyTokenInput" placeholder="Cole aqui o VIP_TOKEN antigo" />
+        <div style="margin-top:10px">
+          <button class="btn-auth" onclick="submitLegacyToken()">Conectar token</button>
+        </div>
+      </div>
+      <div class="auth-msg" id="authMsg"></div>
+    </div>
+  </div>
+
+  <!-- ADMIN: AUTO-TRADE PANEL (só visível para role=admin) -->
+  <div class="card" id="autoTradeAdminCard" style="display:none;border:1px solid var(--border);margin-bottom:12px">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+      <div>
+        <div style="font-size:13px;font-weight:700;color:var(--gold)">⚙️ Auto-Trade Bot</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px" id="autoTradeStatusText">Carregando status...</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span id="autoTradePill" style="font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;background:rgba(100,116,139,.2);color:var(--muted)">—</span>
+        <button id="btnAutoTradeOn"  onclick="setAutoTrade(true)"  style="padding:6px 14px;border-radius:6px;border:1px solid var(--green);background:rgba(0,255,65,.08);color:var(--green);font-size:12px;font-weight:700;cursor:pointer">🟢 Ligar</button>
+        <button id="btnAutoTradeOff" onclick="setAutoTrade(false)" style="padding:6px 14px;border-radius:6px;border:1px solid var(--red);background:rgba(239,83,80,.08);color:var(--red);font-size:12px;font-weight:700;cursor:pointer">🔴 Desligar</button>
+        <button id="btnRiskFilterToggle" onclick="toggleAutoTradeRiskFilter()"
+          title="Filtro de Risco Adaptativo&#10;&#10;Quando ATIVO, monitora a performance recente dos sinais e pausa o auto-trade automaticamente se detectar:&#10;• CAUTIOUS: 2+ losses consecutivos ou drawdown ≥ 1%&#10;• DEFENSIVE: 3+ losses ou drawdown ≥ 2% — reduz size para 50%&#10;• BLOCKED: 5+ losses ou drawdown ≥ 3% — para completamente&#10;&#10;Quando INATIVO, o auto-trade abre posições independente da performance recente."
+          style="padding:6px 14px;border-radius:6px;border:1px solid var(--gold);background:rgba(255,193,7,.08);color:var(--gold);font-size:12px;font-weight:700;cursor:pointer">🛡️ Filtro risco</button>
+        <button id="btnSessionOverride" onclick="toggleSessionBlockOverride()"
+          title="Override de Bloqueio de Sessão&#10;&#10;Por padrão, o auto-trade é bloqueado em:&#10;• NY puro (16:00–21:00 UTC) — WR histórico 18%&#10;• Sem sessão (21:00–00:00 UTC) — WR histórico 17%&#10;&#10;Ativando o OVERRIDE, essas restrições são ignoradas temporariamente — útil para testes ou operar manualmente em horários bloqueados.&#10;&#10;⚠️ Reinicia como DESATIVADO a cada restart do servidor."
+          style="padding:6px 14px;border-radius:6px;border:1px solid #64748b;background:rgba(100,116,139,.08);color:#64748b;font-size:12px;font-weight:700;cursor:pointer">🕐 Horário bloq.</button>
+      </div>
+    </div>
+    <div style="font-size:10px;color:var(--muted);margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
+      🟢 <b>Automático</b>: bot abre trade no MT5 quando score ≥ threshold, sem precisar clicar &nbsp;|&nbsp;
+      🔴 <b>Manual</b>: só abre quando você clicar "Abrir Trade" no dashboard (modo para clientes) &nbsp;|&nbsp;
+      🛡️ <b>Filtro risco</b>: pausa o auto-trade se detectar sequência de losses ou drawdown elevado (inativo por padrão) &nbsp;|&nbsp;
+      🕐 <b>Horário bloq.</b>: NY puro (16–21 UTC) e Sem sessão (21–00 UTC) são bloqueados — clique para ignorar temporariamente
+    </div>
+  </div>
+
+  <!-- ADMIN: TRAILING STOP PANEL (só visível para role=admin) -->
+  <div class="card" id="trailingStopAdminCard" style="display:none;border:1px solid var(--border);margin-bottom:12px">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+      <div>
+        <div style="font-size:13px;font-weight:700;color:var(--gold)">📐 Trailing Stop (ATR)</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px" id="trailingStopStatusText">Carregando status...</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span id="trailingStopPill" style="font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;background:rgba(100,116,139,.2);color:var(--muted)">—</span>
+        <button id="btnTrailingOn"  onclick="setTrailingStop(true)"  style="padding:6px 14px;border-radius:6px;border:1px solid var(--green);background:rgba(0,255,65,.08);color:var(--green);font-size:12px;font-weight:700;cursor:pointer">🟢 Ligar</button>
+        <button id="btnTrailingOff" onclick="setTrailingStop(false)" style="padding:6px 14px;border-radius:6px;border:1px solid var(--red);background:rgba(239,83,80,.08);color:var(--red);font-size:12px;font-weight:700;cursor:pointer">🔴 Desligar</button>
+      </div>
+    </div>
+    <div style="font-size:10px;color:var(--muted);margin-top:8px;padding-top:8px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <span>🟢 <b>Ligado</b>: servidor move SL (1.5×ATR) e alerta breakeven &nbsp;|&nbsp;
+      🔴 <b>Desligado</b>: SL fixo — use quando bot MT5 já gerencia trailing</span>
+      <button onclick="resetAllTrades()" style="padding:5px 12px;border-radius:6px;border:1px solid #ef5350;background:rgba(239,83,80,.08);color:#ef5350;font-size:11px;font-weight:700;cursor:pointer">🗑️ Resetar Operações</button>
+    </div>
+  </div>
+
+  <div class="card" id="profitLockAdminCard" style="display:none;border:1px solid var(--border);margin-bottom:12px">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+      <div>
+        <div style="font-size:13px;font-weight:700;color:var(--gold)">🔐 Profit Lock (Bot MT5)</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px" id="profitLockStatusText">Carregando status...</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span id="profitLockPill" style="font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;background:rgba(100,116,139,.2);color:var(--muted)">—</span>
+        <button id="btnProfitLockOn" onclick="setProfitLock(true)" style="padding:6px 14px;border-radius:6px;border:1px solid var(--green);background:rgba(0,255,65,.08);color:var(--green);font-size:12px;font-weight:700;cursor:pointer">🟢 Ligar</button>
+        <button id="btnProfitLockOff" onclick="setProfitLock(false)" style="padding:6px 14px;border-radius:6px;border:1px solid var(--red);background:rgba(239,83,80,.08);color:var(--red);font-size:12px;font-weight:700;cursor:pointer">🔴 Desligar</button>
+      </div>
+    </div>
+    <div style="font-size:10px;color:var(--muted);margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
+      🟢 <b>Ligado</b>: ao atingir 80% do alvo, o bot move o SL para travar 20% do ganho &nbsp;|&nbsp;
+      🔴 <b>Desligado</b>: mantém o stop original até TP/SL/manual
+    </div>
+  </div>
+
+  <div class="card" id="botVisualCard" style="display:none;border:1px solid var(--border);margin-bottom:12px">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+      <div>
+        <div style="font-size:13px;font-weight:700;color:var(--gold)">🧭 Painel do Bot MT5</div>
+        <div id="botVisualStatusText" style="font-size:11px;color:var(--muted);margin-top:2px">Carregando status...</div>
+      </div>
+      <div id="botVisualPill" style="font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;background:rgba(100,116,139,.2);color:var(--muted)">—</div>
+    </div>
+    <div id="botVisualMetrics" class="grid-4" style="margin-bottom:14px">
+      <div class="card metric-card"><div class="metric-val">—</div><div class="metric-label">Equity</div></div>
+      <div class="card metric-card"><div class="metric-val">—</div><div class="metric-label">Balance</div></div>
+      <div class="card metric-card"><div class="metric-val">—</div><div class="metric-label">Free Margin</div></div>
+      <div class="card metric-card"><div class="metric-val">—</div><div class="metric-label">Posições</div></div>
+    </div>
+    <div id="botVisualFlags" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Ticket</th><th>Ativo</th><th>Dir</th><th>Volume</th><th>Abertura</th><th>Atual</th><th>SL</th><th>TP</th><th>P/L</th></tr></thead>
+        <tbody id="botVisualPositions"><tr><td colspan="9"><div class="empty-state"><div class="emoji">🛰</div>Sem posições abertas no bot</div></td></tr></tbody>
+      </table>
+    </div>
+    <!-- Ferramentas de manutenção de histórico -->
+    <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <span style="font-size:11px;color:var(--muted);font-weight:600">🔧 Manutenção:</span>
+      <button id="btnRepairPrices"
+        onclick="repairPricesFromMt5()"
+        title="Busca histórico real do MT5 e corrige closePrice + outcome de todos os trades com MT5_CLOSED&#10;(resolve o problema de preços errados gravados pelo mecanismo de fallback)"
+        style="padding:5px 13px;border-radius:6px;border:1px solid #3b82f6;background:rgba(59,130,246,.10);color:#60a5fa;font-size:11px;font-weight:700;cursor:pointer">
+        🔄 Reparar preços via MT5
+      </button>
+      <span id="repairPricesStatus" style="font-size:11px;color:var(--muted)"></span>
+    </div>
+  </div>
+
+  <!-- CONTROLS -->
+  <div class="controls">
+    <div class="token-chip ok" id="vipDebugBadge">VIP BUILD 2026-04-23-DEBUG-2</div>
+    <div class="token-chip missing" id="vipTokenStatus">🔐 Token VIP ausente</div>
+    <label>Ativo</label>
+    <select id="selAsset">
+      <option value="xauusd">XAUUSD</option>
+      <option value="btc">BTCUSD</option>
+      <option value="eurusd">EURUSD</option>
+      <option value="usdjpy">USDJPY</option>
+    </select>
+    <label>Entry TF</label>
+    <select id="selEntryTf">
+      <option value="15m">15 min</option>
+      <option value="1h">1 hora</option>
+    </select>
+    <label>Bias TF</label>
+    <select id="selBiasTf">
+      <option value="1h" selected>1 hora</option>
+      <option value="4h">4 horas</option>
+      <option value="daily">Diário</option>
+    </select>
+    <button class="btn-refresh" id="btnRefresh" onclick="manualRefresh()">🔄 Atualizar</button>
+    <span class="last-update" id="lastUpdate"></span>
+    <span class="last-update" id="vipResponseAsset">req: â€” | res: â€”</span>
+    <span class="last-update" id="vipDebugPhase">phase: idle</span>
+  </div>
+
+  <!-- STATUS HERO -->
+  <div class="status-hero" id="statusHero">
+    <div class="status-badge loading" id="statusBadge"><span class="spinner"></span> Carregando...</div>
+  </div>
+
+  <!-- CHECKLIST + NÍVEIS -->
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title" id="checklistCardTitle">📋 Checklist VIP</div>
+      <div class="checklist" id="checklist">
+        <div class="check-row"><span class="check-icon">⏳</span><div class="check-info"><div class="check-name">Aguardando dados...</div></div></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">🎯 Níveis Operacionais</div>
+      <div id="levelsBlock"><div class="empty-state"><div class="emoji">📡</div>Aguardando sinal</div></div>
+    </div>
+    <div class="card" id="setupHistoryCard" style="display:none">
+      <div class="card-title">📈 Histórico deste Setup</div>
+      <div id="setupHistoryBlock"></div>
+    </div>
+  </div>
+
+  <!-- POSITION SIZING -->
+  <div class="card" id="sizingCard" style="display:none">
+    <div class="card-title">🧮 Position Sizing</div>
+    <div id="sizingBlock">
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+        <div class="form-group" style="flex:1;min-width:130px">
+          <label>Capital da Conta (USD)</label>
+          <input type="number" id="sCapital" value="1000" min="100" step="100" oninput="calcSizing()" />
+        </div>
+        <div class="form-group" style="flex:1;min-width:130px">
+          <label>Risco por Trade (%)</label>
+          <input type="number" id="sRiskPct" value="1" min="0.1" max="5" step="0.1" oninput="calcSizing()" />
+        </div>
+      </div>
+      <div id="sizingResult"></div>
+    </div>
+  </div>
+
+  <!-- REGISTRAR TRADE -->
+  <div class="card" id="tradeFormCard" style="display:none">
+    <div class="card-title">📝 Registrar Trade</div>
+    <div class="trade-form">
+      <div class="form-row">
+        <div class="form-group"><label>Direção</label><input type="text" id="fDir" readonly /></div>
+        <div class="form-group"><label>Entry</label><input type="number" id="fEntry" step="any" /></div>
+        <div class="form-group"><label>Stop Loss</label><input type="number" id="fSL" step="any" /></div>
+        <div class="form-group"><label>Take Profit</label><input type="number" id="fTP" step="any" /></div>
+      </div>
+      <div class="form-group">
+        <label>Observação (opcional)</label>
+        <input type="text" id="fReason" placeholder="Ex: breakout confirmado na abertura de NY" />
+      </div>
+      <button class="btn-open-trade" id="btnOpenTrade" onclick="openTrade()">Abrir Trade</button>
+      <div class="form-msg" id="formMsg"></div>
+    </div>
+  </div>
+
+  <!-- TRADES ABERTOS -->
+  <div class="card">
+    <div class="card-title">📂 Trades Abertos <span id="openCount" style="color:var(--gold)"></span></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Ativo</th><th>Dir</th><th>Entry</th><th>SL</th><th>TP</th><th>ATR</th><th>Score</th><th>Sessão</th><th>Aberto em</th><th>Ação</th></tr></thead>
+        <tbody id="openTrades"><tr><td colspan="10"><div class="empty-state"><div class="emoji">🗂</div>Nenhum trade aberto</div></td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- MÉTRICAS + EQUITY -->
+  <div class="card">
+    <div class="card-title">📈 Métricas de Performance</div>
+    <div id="statsBlock"><div class="empty-state"><div class="emoji">📊</div>Sem trades fechados ainda</div></div>
+    <div class="equity-wrap" id="equityWrap" style="display:none">
+      <div class="equity-title">Curva de Equity (em R)</div>
+      <canvas id="equityChart"></canvas>
+    </div>
+  </div>
+
+  <!-- HISTÓRICO TABS -->
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:4px">
+      <div class="tab-btns" style="margin-bottom:0">
+        <button class="tab-btn active" id="tabTrades"  onclick="switchTab('trades')">Trades Fechados</button>
+        <button class="tab-btn"        id="tabJournal" onclick="switchTab('journal')">📓 Journal</button>
+        <button class="tab-btn"        id="tabSignals" onclick="switchTab('signals')">Histórico de Sinais</button>
+      </div>
+      <button onclick="exportTradesCSV()" style="background:rgba(240,180,41,.12);border:1px solid rgba(240,180,41,.3);color:var(--gold);padding:6px 14px;border-radius:6px;font-size:12px;cursor:pointer;white-space:nowrap">📥 Exportar CSV</button>
+    </div>
+    <div id="tabTradesContent">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Ativo</th><th>Dir</th><th>Entry</th><th>Close</th><th>R Real</th><th>Outcome</th><th>RR Plano</th><th>Base</th><th>Ticket MT5</th><th>Sessão</th><th>Fechado em</th><th>Ações</th></tr></thead>
+          <tbody id="closedTrades"><tr><td colspan="12"><div class="empty-state"><div class="emoji">📜</div>Nenhum trade fechado ainda</div></td></tr></tbody>
+        </table>
+      </div>
+    </div>
+    <div id="tabSignalsContent" style="display:none">
+      <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+        <select id="sigFilterStatus" onchange="loadSignalHistory()" style="background:var(--card);border:1px solid var(--border);color:var(--text);padding:5px 10px;border-radius:6px;font-size:12px">
+          <option value="">Todos os status</option>
+          <option value="VALID_SIGNAL">Sinal Válido</option>
+          <option value="PARTIAL_SIGNAL">Sinal Parcial</option>
+          <option value="NO_SIGNAL">Sem Sinal</option>
+          <option value="NEWS_BLOCKED">Bloqueado (News)</option>
+          <option value="CONTEXT_BLOCKED">Bloqueado (Contexto)</option>
+          <option value="NO_BIAS">Sem Tendência</option>
+        </select>
+        <select id="sigFilterAsset" onchange="loadSignalHistory()" style="background:var(--card);border:1px solid var(--border);color:var(--text);padding:5px 10px;border-radius:6px;font-size:12px">
+          <option value="">Todos os ativos</option>
+          <option value="xauusd">XAUUSD</option>
+          <option value="btc">BTCUSD</option>
+          <option value="eurusd">EURUSD</option>
+          <option value="usdjpy">USDJPY</option>
+        </select>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Ativo</th><th>Status</th><th>Dir</th><th>Score</th><th>Entry TF</th><th>Bias TF</th><th>ADX</th><th>Sessão</th><th>Gerado em</th></tr></thead>
+          <tbody id="signalHistory"><tr><td colspan="9"><div class="empty-state"><div class="emoji">📡</div>Nenhum sinal registrado</div></td></tr></tbody>
+        </table>
+      </div>
+    </div>
+    <!-- JOURNAL TAB -->
+    <div id="tabJournalContent" style="display:none">
+      <div id="journalStreaks" style="margin-bottom:16px"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+        <div id="journalMonthly"></div>
+        <div id="journalDistrib"></div>
+      </div>
+      <div id="journalNotesTrades"></div>
+    </div>
+  </div>
+
+</div><!-- /container -->
+
+<script>
+// ── SIZING CONFIG ──
+// Tamanho do pip/tick por ativo — usado para converter risco em USD → lotes
+const ASSET_SIZING = {
+  xauusd: { pipValue: 1.0,    pipSize: 0.01,  unit: 'oz',    label: 'oz'     }, // 1 lote = 100oz, pip=$1/oz
+  btc:    { pipValue: 1.0,    pipSize: 1.0,   unit: 'BTC',   label: 'BTC'    }, // direto em USD
+  eurusd: { pipValue: 10.0,   pipSize: 0.0001,unit: 'lotes', label: 'lotes'  }, // 1 lote std = $10/pip
+  usdjpy: { pipValue: 9.1,    pipSize: 0.01,  unit: 'lotes', label: 'lotes'  }, // ~$9.1/pip (aprox)
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// VIP STATE MANAGER - Fix para bug XAUUSD travado (linha 713)
+// Gerencia estado de ativo selecionado com sincronização automática
+// ═══════════════════════════════════════════════════════════════════
+class VIPStateManager {
+  constructor() {
+    this._asset = 'xauusd';
+    this._assetEl = null;
+    this._listeners = new Set();
+  }
+
+  init() {
+    this._assetEl = document.getElementById('selAsset');
+    if (this._assetEl) {
+      this._assetEl.addEventListener('change', (e) => {
+        this.setAsset(e.target.value, false);
+      });
+    }
+    return this;
+  }
+
+  getAsset() {
+    const value = String(this._asset || 'xauusd').toLowerCase();
+    if (this._assetEl && this._assetEl.value !== value) {
+      this._assetEl.value = value;
+    }
+    return value;
+  }
+
+  setAsset(newAsset, updateDOM = true) {
+    const normalized = String(newAsset || 'xauusd').toLowerCase();
+    if (this._asset === normalized) return;
+    this._asset = normalized;
+    if (updateDOM && this._assetEl) {
+      this._assetEl.value = normalized;
+    }
+    this._notifyListeners(normalized);
+  }
+
+  onChange(callback) {
+    this._listeners.add(callback);
+  }
+
+  _notifyListeners(newAsset) {
+    this._listeners.forEach(cb => {
+      try { cb(newAsset); } catch (err) { console.error('Erro em listener:', err); }
+    });
+  }
+}
+
+const vipState = new VIPStateManager();
+
+// Compatibilidade com código antigo que usa vipSelectedAsset
+Object.defineProperty(window, 'vipSelectedAsset', {
+  get() { return vipState.getAsset(); },
+  set(value) { vipState.setAsset(value); }
+});
+
+// ── ESTADO ──
+let currentSignal = null;
+let closingTradeId = null;
+let autoRefreshTimer = null;
+let countdownTimer = null;
+let botPanelTimer = null;
+let tradesPollTimer = null;  // poll leve a cada 30s só para trades/gráfico
+let countdownSec = 900;
+let equityChartInstance = null;
+let signalRequestSeq = 0;
+let signalAbortController = null;
+let lastObservedAsset = null;
+let vipToken = '';
+let vipAuthType = 'none';
+let vipUser = null;
+let authConfig = null;
+const AUTO_REFRESH_SEC = 900; // 15 minutos — alinhado com CACHE_TTL_MS do servidor
+
+// ── UTILS ──
+function fmtDate(ts) {
+  if (!ts) return '—';
+  return new Date(ts).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+}
+function fmtNum(n, dec = 2) {
+  if (n == null || isNaN(n)) return '—';
+  return parseFloat(n).toFixed(dec);
+}
+function sanitize(s) {
+  if (typeof s !== 'string') return String(s ?? '');
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+function getDecimals(asset) {
+  return { btc: 0, xauusd: 2, eurusd: 5, usdjpy: 3 }[asset] || 2;
+}
+function fmtCountdown(sec) {
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return `${m}:${String(s).padStart(2,'0')}`;
+}
+
+// ── SCANNER ──
+function getStoredSessionToken() {
+  return (localStorage.getItem('vip_session_token') || '').trim();
+}
+
+function getStoredLegacyToken() {
+  return (localStorage.getItem('vip_token') || '').trim();
+}
+
+function setStoredSessionToken(token) {
+  if (token) localStorage.setItem('vip_session_token', token);
+  else localStorage.removeItem('vip_session_token');
+}
+
+function setStoredLegacyToken(token) {
+  if (token) localStorage.setItem('vip_token', token);
+  else localStorage.removeItem('vip_token');
+}
+
+function getVipToken() {
+  if (vipToken) return vipToken;
+  const params = new URLSearchParams(window.location.search);
+  const fromQuery = (params.get('token') || '').trim();
+  const fromSession = getStoredSessionToken();
+  const fromLegacy = getStoredLegacyToken();
+  if (fromQuery && !fromLegacy && !fromSession) {
+    setStoredLegacyToken(fromQuery);
+  }
+  vipToken = fromSession || fromQuery || fromLegacy;
+  vipAuthType = fromSession ? 'session' : (vipToken ? 'legacy' : 'none');
+  return vipToken;
+}
+
+function clearVipAuthStorage() {
+  vipToken = '';
+  vipAuthType = 'none';
+  vipUser = null;
+  setStoredSessionToken('');
+  setStoredLegacyToken('');
+}
+
+function setVipAppLocked(locked) {
+  document.body.classList.toggle('locked', locked);
+}
+
+function setAuthMessage(message = '', type = '') {
+  const el = document.getElementById('authMsg');
+  if (!el) return;
+  el.className = `auth-msg${type ? ' ' + type : ''}`;
+  el.textContent = message;
+}
+
+function updateVipTokenBadge() {
+  const badge = document.getElementById('vipTokenStatus');
+  const authChip = document.getElementById('authStatusChip');
+  const logoutBtn = document.getElementById('btnLogout');
+  const hasToken = !!getVipToken();
+  const hasVip = !!vipUser?.hasVipAccess;
+  const loggedIn = !!vipUser;
+  const planLabel = vipUser?.planCode ? String(vipUser.planCode).toUpperCase() : 'SEM PLANO';
+  const accessLabel = vipUser?.accessStatus ? String(vipUser.accessStatus).toUpperCase() : 'LOCKED';
+
+  badge.className = `token-chip ${loggedIn ? 'ok' : hasToken ? 'ok' : 'missing'}`;
+  badge.textContent = loggedIn
+    ? `🔐 ${vipAuthType === 'legacy_token' || vipAuthType === 'legacy' ? 'Token legado' : 'Sessao ativa'} · ${planLabel}`
+    : hasToken
+      ? '🔐 Credencial conectada'
+      : '🔐 Login necessario';
+
+  authChip.className = `auth-chip ${loggedIn && hasVip ? 'ok' : 'missing'}`;
+  authChip.textContent = loggedIn
+    ? `${hasVip ? 'Liberado' : 'Sem VIP'} · ${accessLabel}`
+    : 'Bloqueado';
+
+  logoutBtn.style.display = loggedIn ? '' : 'none';
+}
+
+function renderAuthPanel() {
+  const panel = document.getElementById('authPanel');
+  const title = document.getElementById('authTitle');
+  const text = document.getElementById('authText');
+  const meta = document.getElementById('authUserMeta');
+  const form = document.getElementById('loginFormCard');
+  const loggedIn = !!vipUser;
+  const hasVip = !!vipUser?.hasVipAccess;
+
+  if (!panel || !title || !text || !meta || !form) return;
+
+  if (!loggedIn) {
+    panel.classList.remove('hidden');
+    title.textContent = 'Entre para liberar a area premium';
+    text.textContent = 'Use sua conta para acessar sinais VIP, scanner, trades e historico. O token legado continua funcionando enquanto a migracao nao termina.';
+    meta.innerHTML = '<span class="auth-pill">Login com sessao persistente</span><span class="auth-pill">Plano controla acesso VIP</span><span class="auth-pill">Fallback do token antigo mantido</span>';
+    form.style.display = '';
+    return;
+  }
+
+  title.textContent = hasVip ? 'Area VIP liberada' : 'Conta conectada, mas sem acesso VIP';
+  text.textContent = hasVip
+    ? `Voce entrou como ${vipUser.email}. A sessao permanece salva neste navegador.`
+    : `Voce entrou como ${vipUser.email}, mas seu plano atual nao libera a area VIP.`;
+  meta.innerHTML = `
+    <span class="auth-pill">Plano: ${sanitize(vipUser.planCode || 'free')}</span>
+    <span class="auth-pill">Status: ${sanitize(vipUser.accessStatus || 'inactive')}</span>
+    <span class="auth-pill">Perfil: ${sanitize(vipUser.role || 'subscriber')}</span>
+  `;
+  form.style.display = hasVip ? 'none' : '';
+  panel.classList.toggle('hidden', hasVip);
+}
+
+async function fetchAuthConfig() {
+  try {
+    const res = await fetch('/api/auth/config');
+    authConfig = await res.json();
+  } catch (_) {
+    authConfig = null;
+  }
+}
+
+async function restoreVipSession() {
+  getVipToken();
+  updateVipTokenBadge();
+  renderAuthPanel();
+
+  const token = getVipToken();
+  if (!token) {
+    setVipAppLocked(true);
+    return false;
+  }
+
+  try {
+    const res = await fetch('/api/auth/me', {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    // 429: servidor ocupado, NÃO apagar o token — tentar novamente em alguns segundos
+    if (res.status === 429) {
+      const retryAfter = parseInt(res.headers.get('Retry-After') || '10', 10);
+      setVipAppLocked(false);
+      updateVipTokenBadge();
+      renderAuthPanel();
+      setAuthMessage(`Servidor ocupado. Tentando novamente em ${retryAfter}s...`, 'err');
+      setTimeout(() => restoreVipSession(), retryAfter * 1000);
+      return false;
+    }
+
+    const payload = await res.json();
+    if (!res.ok || !payload?.success || !payload?.user) {
+      // Só limpa o token em 401/403 (sessão realmente inválida/expirada)
+      if (res.status === 401 || res.status === 403) {
+        clearVipAuthStorage();
+      }
+      throw new Error(payload?.error || 'Sessao invalida');
+    }
+
+    vipUser = payload.user;
+    vipAuthType = payload.authType || vipAuthType;
+    if (vipAuthType === 'session') setStoredSessionToken(token);
+    else setStoredLegacyToken(token);
+    setVipAppLocked(!vipUser.hasVipAccess);
+    updateVipTokenBadge();
+    renderAuthPanel();
+    if (!vipUser.hasVipAccess) {
+      setAuthMessage('Sua conta foi reconhecida, mas ainda nao tem acesso VIP.', 'err');
+      return false;
+    }
+    setAuthMessage('');
+    return true;
+  } catch (err) {
+    updateVipTokenBadge();
+    renderAuthPanel();
+    setVipAppLocked(true);
+    setAuthMessage(err.message || 'Nao foi possivel validar a sessao.', 'err');
+    return false;
+  }
+}
+
+async function submitLogin() {
+  const email = document.getElementById('authEmail').value.trim();
+  const password = document.getElementById('authPassword').value;
+  if (!email || !password) {
+    setAuthMessage('Preencha email e senha.', 'err');
+    return;
+  }
+
+  setAuthMessage('Entrando...', '');
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    const payload = await res.json();
+    if (!res.ok || !payload?.success || !payload?.session?.token) {
+      throw new Error(payload?.error || 'Falha no login');
+    }
+
+    vipToken = payload.session.token;
+    vipAuthType = 'session';
+    setStoredSessionToken(vipToken);
+    setStoredLegacyToken('');
+    setAuthMessage('Login realizado. Carregando area VIP...', 'ok');
+    const ok = await restoreVipSession();
+    if (ok) {
+      await refreshAll();
+      startCountdown();
+    }
+  } catch (err) {
+    setAuthMessage(err.message || 'Falha no login', 'err');
+  }
+}
+
+function toggleLegacyToken() {
+  const wrap = document.getElementById('legacyTokenWrap');
+  if (!wrap) return;
+  wrap.style.display = wrap.style.display === 'none' ? '' : 'none';
+}
+
+async function submitLegacyToken() {
+  const token = document.getElementById('legacyTokenInput').value.trim();
+  if (!token) {
+    setAuthMessage('Cole o token legado para continuar.', 'err');
+    return;
+  }
+
+  vipToken = token;
+  vipAuthType = 'legacy';
+  setStoredLegacyToken(token);
+  setStoredSessionToken('');
+  setAuthMessage('Validando token legado...', '');
+  const ok = await restoreVipSession();
+  if (ok) {
+    await refreshAll();
+    startCountdown();
+  }
+}
+
+async function logoutVip() {
+  try {
+    if (vipAuthType === 'session' && getVipToken()) {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${getVipToken()}` }
+      });
+    }
+  } catch (_) {
+    // ignore
+  }
+  clearVipAuthStorage();
+  updateVipTokenBadge();
+  renderAuthPanel();
+  setVipAppLocked(true);
+  setAuthMessage('Sessao encerrada.', 'ok');
+}
+
+async function vipFetch(url, options = {}) {
+  const token = getVipToken();
+  const headers = { ...(options.headers || {}) };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const response = await fetch(url, { ...options, headers });
+  if (response.status === 429) {
+    const retryAfter = parseInt(response.headers.get('Retry-After') || '10', 10);
+    throw new Error(`Too many requests — aguarde ${retryAfter}s`);
+  }
+  if (response.status === 401 || response.status === 403 || response.status === 503) {
+    let payload = null;
+    try { payload = await response.clone().json(); } catch (_) { /* ignore */ }
+    if (response.status === 401 || response.status === 403) {
+      setVipAppLocked(true);
+      renderAuthPanel();
+      updateVipTokenBadge();
+    }
+    throw new Error(payload?.detail || payload?.error || `HTTP ${response.status}`);
+  }
+  return response;
+}
+
+async function runScan() {
+  const entryTf = document.getElementById('selEntryTf').value;
+  const biasTf  = document.getElementById('selBiasTf').value;
+  try {
+    const r = await vipFetch(`/api/vip/scan?entryTf=${entryTf}&biasTf=${biasTf}`);
+    const data = await r.json();
+    if (!data.success) return;
+    const statusLabels = {
+      VALID_SIGNAL: '✅ Válido', PARTIAL_SIGNAL: '⚡ Parcial',
+      NO_SIGNAL: '⏸ Sem sinal', NEWS_BLOCKED: '🚫 News',
+      CONTEXT_BLOCKED: '⛔ Contexto',
+      NO_BIAS: '🔵 Sem viés', ERROR: '⚠️ Erro', loading: '...',
+    };
+    Object.entries(data.results).forEach(([key, s]) => {
+      const card = document.getElementById('scan-' + key);
+      if (!card) return;
+      const status = s.status || 'NO_SIGNAL';
+      const dir    = s.direction || 'NEUTRAL';
+      const scoreStr = s.score != null ? `${s.score}/${s.maxScore||7} • ADX ${s.adx != null ? fmtNum(s.adx,1) : '—'}` : '—';
+      const op = s.operationalContext || null;
+      const opColor = op?.status === 'OPERAR' ? 'var(--green)' : op?.status === 'EVITAR' ? 'var(--red)' : 'var(--gold)';
+      card.className = `scanner-card ${status}`;
+      const sel = document.getElementById('selAsset').value;
+      if (key === sel) card.classList.add('selected');
+      card.innerHTML = `
+        <div>
+          <div class="sc-name">${sanitize(s.name || key.toUpperCase())}</div>
+          <div class="sc-score">${sanitize(scoreStr)}</div>
+          <div class="sc-score" style="margin-top:3px;color:${opColor}">${sanitize(op?.status || 'CAUTELA')}</div>
+        </div>
+        <div style="margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:3px">
+          <span class="sc-badge ${sanitize(status)}">${sanitize(statusLabels[status] || status)}</span>
+          <span class="sc-dir ${sanitize(dir)}">${dir === 'BUY' ? '📈 BUY' : dir === 'SELL' ? '📉 SELL' : '—'}</span>
+        </div>
+      `;
+      // pulsa se sinal válido
+      if (status === 'VALID_SIGNAL') card.classList.add('pulse');
+      card.onclick = () => selectAsset(key);
+    });
+  } catch(e) { /* silent */ }
+}
+
+function selectAsset(key) {
+  const assetEl = document.getElementById('selAsset');
+  const normalizedAsset = String(key || '').toLowerCase() || 'xauusd';
+  if (vipSelectedAsset === normalizedAsset && currentSignal?.asset === normalizedAsset) {
+    syncScannerSelection();
+    return;
+  }
+  vipSelectedAsset = normalizedAsset;
+  if (assetEl) assetEl.value = normalizedAsset;
+  lastObservedAsset = normalizedAsset;
+  const responseAsset = document.getElementById('vipResponseAsset');
+  if (responseAsset) {
+    responseAsset.textContent = `req: ${String(normalizedAsset).toUpperCase()} | res: PENDENTE`;
+  }
+  const phase = document.getElementById('vipDebugPhase');
+  if (phase) phase.textContent = 'phase: select';
+  syncScannerSelection();
+  window.setTimeout(() => loadSignal(), 0);
+}
+
+function handleAssetChange(forcedAsset) {
+  const assetEl = document.getElementById('selAsset');
+  const normalizedAsset = String(forcedAsset || assetEl?.value || vipSelectedAsset || 'xauusd').toLowerCase();
+  if (vipSelectedAsset === normalizedAsset && currentSignal?.asset === normalizedAsset) {
+    syncScannerSelection();
+    return;
+  }
+  vipSelectedAsset = normalizedAsset;
+  if (assetEl) assetEl.value = normalizedAsset;
+  lastObservedAsset = normalizedAsset;
+  const responseAsset = document.getElementById('vipResponseAsset');
+  if (responseAsset) {
+    responseAsset.textContent = `req: ${String(normalizedAsset).toUpperCase()} | res: PENDENTE`;
+  }
+  const phase = document.getElementById('vipDebugPhase');
+  if (phase) phase.textContent = 'phase: change';
+  syncScannerSelection();
+  window.setTimeout(() => loadSignal(), 0);
+}
+
+function resetSignalView(asset) {
+  const assetLabel = String(asset || '').toUpperCase() || 'ATIVO';
+  const hero = document.getElementById('statusHero');
+  const checklist = document.getElementById('checklist');
+  const levelsBlock = document.getElementById('levelsBlock');
+  const statusBadge = document.getElementById('statusBadge');
+
+  if (hero) {
+    hero.innerHTML = `
+      <div class="status-badge loading" id="statusBadge"><span class="spinner"></span> Carregando ${assetLabel}</div>
+      <div class="direction-pill NEUTRAL">◼ AGUARDANDO</div>
+      <div class="score-ring">
+        <div class="score-val">—<span style="font-size:14px;color:var(--muted)">/—</span></div>
+        <div class="score-label">Score</div>
+      </div>
+      <div class="reason-text">Buscando sinal VIP atualizado para ${assetLabel}...</div>
+    `;
+  }
+
+  if (checklist) {
+    checklist.innerHTML = '<div class="check-row"><span class="check-icon">⏳</span><div class="check-info"><div class="check-name">Carregando novo ativo...</div><div class="check-desc">Limpando o estado anterior para evitar mistura de sinais.</div></div></div>';
+  }
+
+  if (levelsBlock) {
+    levelsBlock.innerHTML = `<div class="empty-state"><div class="emoji">⏳</div>Carregando níveis de ${assetLabel}</div>`;
+  }
+
+  if (statusBadge) {
+    statusBadge.className = 'status-badge loading';
+    statusBadge.innerHTML = '<span class="spinner"></span> Calculando...';
+  }
+
+  const responseAsset = document.getElementById('vipResponseAsset');
+  if (responseAsset) {
+    responseAsset.textContent = `req: ${assetLabel} | res: â€”`;
+  }
+}
+
+function syncScannerSelection() {
+  const assetEl = document.getElementById('selAsset');
+  const sel = String(vipSelectedAsset || assetEl?.value || 'xauusd').toLowerCase();
+  if (assetEl && assetEl.value !== sel) assetEl.value = sel;
+  document.querySelectorAll('.scanner-card').forEach(c => {
+    c.classList.toggle('selected', c.id === 'scan-' + sel);
+  });
+}
+
+function bindAssetSelector() {
+  const assetEl = document.getElementById('selAsset');
+  if (!assetEl || assetEl.dataset.bound === '1') return;
+  assetEl.dataset.bound = '1';
+  vipSelectedAsset = String(assetEl.value || 'xauusd').toLowerCase();
+  lastObservedAsset = vipSelectedAsset;
+
+  assetEl.addEventListener('change', (event) => handleAssetChange(event.target.value));
+}
+
+// ── AUTO-REFRESH ──
+function startCountdown() {
+  clearInterval(countdownTimer);
+  countdownSec = AUTO_REFRESH_SEC;
+  document.getElementById('countdownVal').textContent = fmtCountdown(countdownSec);
+  countdownTimer = setInterval(() => {
+    const auto = document.getElementById('chkAutoRefresh').checked;
+    if (!auto) { document.getElementById('countdownVal').textContent = '—'; return; }
+    countdownSec--;
+    document.getElementById('countdownVal').textContent = fmtCountdown(Math.max(0, countdownSec));
+    if (countdownSec <= 0) {
+      refreshAll();
+      countdownSec = AUTO_REFRESH_SEC;
+    }
+  }, 1000);
+}
+
+async function refreshAll() {
+  await Promise.all([loadSignal(), runScan(), loadTrades()]);
+  loadBotVisualStatus();
+}
+
+async function manualRefresh() {
+  // Botão manual força recálculo ignorando cache do servidor
+  const btn = document.getElementById('btnRefresh');
+  if (btn) btn._forceRefresh = true;
+  countdownSec = AUTO_REFRESH_SEC;
+  await refreshAll();
+  startCountdown();
+}
+
+// ── SINAL VIP ──
+async function loadSignal() {
+  const phase = document.getElementById('vipDebugPhase');
+  if (phase) phase.textContent = 'phase: load-start';
+  const requestId = ++signalRequestSeq;
+  const assetEl = document.getElementById('selAsset');
+  const asset   = String(vipSelectedAsset || assetEl?.options?.[assetEl.selectedIndex]?.value || assetEl?.value || 'xauusd').toLowerCase();
+  const entryTf = document.getElementById('selEntryTf').value;
+  const biasTf  = document.getElementById('selBiasTf').value;
+  vipSelectedAsset = asset;
+  lastObservedAsset = asset;
+
+  const btn = document.getElementById('btnRefresh');
+  btn.disabled = true;
+  btn.textContent = '⏳ Calculando...';
+  const _sb = document.getElementById('statusBadge');
+  if (_sb) { _sb.className = 'status-badge loading'; _sb.innerHTML = '<span class="spinner"></span> Calculando...'; }
+  document.getElementById('lastUpdate').textContent = `Calculando ${String(asset).toUpperCase()}...`;
+  currentSignal = null;
+  resetSignalView(asset);
+
+  // Timeout de 25s no frontend — evita "Calculando..." eterno se servidor travar
+  if (signalAbortController) {
+    try { signalAbortController.abort(); } catch (_) { /* ignore */ }
+  }
+  const controller = new AbortController();
+  signalAbortController = controller;
+  const timeoutId = setTimeout(() => controller.abort(), 25_000);
+
+  try {
+    if (phase) phase.textContent = 'phase: fetch';
+    const force = btn._forceRefresh ? '&force=1' : '';
+    btn._forceRefresh = false;
+    const r = await vipFetch(`/api/vip/signal?asset=${asset}&entryTf=${entryTf}&biasTf=${biasTf}${force}`, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (phase) phase.textContent = 'phase: json';
+    const data = await r.json();
+    if (requestId !== signalRequestSeq) return;
+    const responseAsset = document.getElementById('vipResponseAsset');
+    if (responseAsset) {
+      responseAsset.textContent = `req: ${String(asset).toUpperCase()} | res: ${String(data.asset || '?').toUpperCase()}`;
+    }
+    if ((data.asset || '').toLowerCase() !== asset) {
+      throw new Error(`Resposta fora de sincronizacao: esperado ${asset.toUpperCase()} e veio ${(data.asset || '?').toUpperCase()}`);
+    }
+    currentSignal = data;
+    if (phase) phase.textContent = 'phase: render';
+    renderSignal(data);
+    const staleNote = data._stale
+      ? ` <span style="color:var(--gold);font-size:11px" title="${data._staleReason||'Dado desatualizado'}">⚠️ dado antigo</span>`
+      : '';
+    const cacheInfo = data._cached
+      ? ` <span style="color:var(--muted);font-size:11px" title="Dado em cache — clique em Atualizar para forçar">⚡ cache ${Math.round((Date.now() - data._cachedAt) / 1000)}s atrás</span>`
+      : '';
+    const lu = document.getElementById('lastUpdate'); if (lu) lu.innerHTML = 'Atualizado: ' + fmtDate(Date.now()) + cacheInfo + staleNote;
+  } catch(e) {
+    clearTimeout(timeoutId);
+    if (requestId !== signalRequestSeq) return;
+    const msg = e.name === 'AbortError' ? 'Troca de ativo em andamento ou tempo esgotado' : (e.message || 'Erro de conexão');
+    const responseAsset = document.getElementById('vipResponseAsset');
+    if (responseAsset) {
+      responseAsset.textContent = `req: ${String(asset).toUpperCase()} | res: ${e.name === 'AbortError' ? 'ABORTADO' : 'ERRO'}`;
+    }
+    if (phase) phase.textContent = `phase: ${e.name === 'AbortError' ? 'abort' : 'error'}`;
+    const sb = document.getElementById('statusBadge'); if (sb) { sb.className = 'status-badge NEWS_BLOCKED'; sb.textContent = `⚠️ ${msg}`; }
+  }
+  if (requestId === signalRequestSeq) {
+    if (signalAbortController === controller) signalAbortController = null;
+    if (phase && phase.textContent === 'phase: render') phase.textContent = 'phase: done';
+    btn.disabled = false;
+    btn.textContent = '🔄 Atualizar';
+  }
+}
+
+// ── POSITION SIZING ──
+function calcSizing() {
+  const resultEl = document.getElementById('sizingResult');
+  if (!resultEl || !currentSignal?.levels) return;
+
+  const capital   = parseFloat(document.getElementById('sCapital')?.value) || 1000;
+  const riskPct   = parseFloat(document.getElementById('sRiskPct')?.value) || 1;
+  const asset     = document.getElementById('selAsset')?.value || 'xauusd';
+  const L         = currentSignal.levels;
+  const direction = currentSignal.direction || 'BUY';
+
+  // Aplica sizingMultiplier do riskState se disponível
+  const riskMult  = currentSignal.riskState?.sizingMultiplier ?? 1.0;
+  const adjRiskPct = riskPct * riskMult;
+
+  const riskUSD   = capital * (adjRiskPct / 100);             // USD em risco
+  const slDist    = Math.abs(L.entry - L.sl);                 // distância do SL em preço
+  if (!slDist || slDist <= 0) { resultEl.innerHTML = '<div style="color:var(--muted);font-size:12px">SL inválido — não é possível calcular sizing.</div>'; return; }
+
+  const cfg = ASSET_SIZING[asset] || ASSET_SIZING.eurusd;
+
+  // Cálculo de lotes/unidades
+  // Para forex: riskUSD / (slDist / pipSize * pipValue)
+  // Para XAU/BTC: riskUSD / slDist (direto em USD por unidade)
+  let lots, lotLabel;
+  if (asset === 'xauusd' || asset === 'btc') {
+    lots     = riskUSD / slDist;
+    lotLabel = cfg.label;
+  } else {
+    const pips = slDist / cfg.pipSize;
+    lots       = riskUSD / (pips * cfg.pipValue);
+    lotLabel   = cfg.label;
+  }
+
+  const lotsStd  = parseFloat(lots.toFixed(2));
+  const lotsMini = parseFloat((lots * 10).toFixed(2));   // mini lots
+  const lotsMicro= parseFloat((lots * 100).toFixed(2));  // micro lots
+  const tpUSD    = riskUSD * (L.rr || 2);               // ganho potencial
+
+  const riskColor  = adjRiskPct > 2 ? 'var(--red)' : adjRiskPct > 1 ? 'var(--gold)' : 'var(--green)';
+  const multLabel  = riskMult < 1
+    ? `<span style="color:var(--gold);font-size:10px">⚠️ Risco ajustado para ${Math.round(riskMult*100)}% pelo modo ${currentSignal.riskState?.level || 'de risco'}</span>`
+    : '';
+
+  resultEl.innerHTML = `
+    ${multLabel ? `<div style="margin-bottom:8px">${multLabel}</div>` : ''}
+    <div class="sizing-grid">
+      <div class="sizing-item">
+        <div class="s-lbl">Risco (USD)</div>
+        <div class="s-val" style="color:${riskColor}">$${riskUSD.toFixed(0)}</div>
+        <div class="s-lbl">${adjRiskPct.toFixed(2)}% do capital</div>
+      </div>
+      <div class="sizing-item">
+        <div class="s-lbl">Lotes Standard</div>
+        <div class="s-val" style="color:var(--text)">${lotsStd}</div>
+        <div class="s-lbl">${lotLabel}</div>
+      </div>
+      ${asset !== 'xauusd' && asset !== 'btc' ? `
+      <div class="sizing-item">
+        <div class="s-lbl">Mini Lotes</div>
+        <div class="s-val" style="color:var(--text)">${lotsMini}</div>
+        <div class="s-lbl">0.1 lote</div>
+      </div>
+      <div class="sizing-item">
+        <div class="s-lbl">Micro Lotes</div>
+        <div class="s-val" style="color:var(--text)">${lotsMicro}</div>
+        <div class="s-lbl">0.01 lote</div>
+      </div>` : ''}
+      <div class="sizing-item">
+        <div class="s-lbl">Ganho Potencial</div>
+        <div class="s-val" style="color:var(--green)">$${tpUSD.toFixed(0)}</div>
+        <div class="s-lbl">R:R 1:${L.rr || 2}</div>
+      </div>
+      <div class="sizing-item">
+        <div class="s-lbl">SL Distância</div>
+        <div class="s-val" style="color:var(--red)">${slDist.toFixed(getDecimals(asset))}</div>
+        <div class="s-lbl">pips / pts</div>
+      </div>
+    </div>
+    <div class="sizing-risk-bar" style="background:${adjRiskPct>2?'rgba(239,83,80,.10)':adjRiskPct>1?'rgba(240,180,41,.10)':'rgba(38,166,154,.10)'};border:1px solid ${riskColor}33;color:${riskColor}">
+      ${adjRiskPct > 2 ? '⚠️ Risco elevado — considere reduzir o tamanho da posição'
+        : adjRiskPct > 1 ? '⚡ Risco moderado — dentro do aceitável'
+        : '✅ Risco conservador'}
+    </div>
+  `;
+}
+
+function renderSignal(data) {
+  if (!data || !data.success) {
+    const sb2 = document.getElementById('statusBadge');
+    if (sb2) { sb2.className = 'status-badge NO_SIGNAL'; sb2.textContent = '⚠️ ' + (data?.reason || data?.status || 'Sem dados'); }
+    return;
+  }
+
+  const status = data.status || 'NO_SIGNAL';
+  const statusLabels = {
+    VALID_SIGNAL: '✅ Sinal Válido', PARTIAL_SIGNAL: '⚡ Sinal Parcial',
+    NO_SIGNAL: '⏸ Sem Sinal', NEWS_BLOCKED: '🚫 Bloqueado por Notícia',
+    CONTEXT_BLOCKED: '⛔ Bloqueado por Contexto',
+    NO_BIAS: '🔵 Sem Tendência', INSUFFICIENT_DATA: '📡 Dados Insuficientes',
+  };
+  const op = data.operationalContext || null;
+  const opColor = op?.status === 'OPERAR' ? 'var(--green)' : op?.status === 'EVITAR' ? 'var(--red)' : 'var(--gold)';
+  const opBg = op?.status === 'OPERAR' ? 'rgba(38,166,154,.12)' : op?.status === 'EVITAR' ? 'rgba(239,83,80,.12)' : 'rgba(240,180,41,.10)';
+  const opBorder = op?.status === 'OPERAR' ? 'rgba(38,166,154,.35)' : op?.status === 'EVITAR' ? 'rgba(239,83,80,.35)' : 'rgba(240,180,41,.30)';
+
+  // ── Hero ──
+  const hero = document.getElementById('statusHero');
+  hero.innerHTML = `
+    <div class="status-badge ${sanitize(status)}${status === 'VALID_SIGNAL' ? ' pulse' : ''}" id="statusBadge">${sanitize(statusLabels[status] || status)}</div>
+    <div class="direction-pill ${sanitize(data.direction || 'NEUTRAL')}">
+      ${data.direction === 'BUY' ? '📈 BUY' : data.direction === 'SELL' ? '📉 SELL' : '◼ NEUTRO'}
+    </div>
+    <div class="score-ring">
+      <div class="score-val">${data.score || 0}<span style="font-size:14px;color:var(--muted)">/${data.maxScore || 7}</span></div>
+      <div class="score-label">Score</div>
+    </div>
+    <div class="reason-text">
+      ${sanitize(data.meta?.reason || '')}
+      ${op ? `<div style="margin-top:8px;padding:10px 14px;background:${opBg};border:1px solid ${opBorder};border-radius:10px;color:${opColor};font-weight:700">${sanitize(op.status)} — ${sanitize(op.summary)}<div style="margin-top:4px;font-size:12px;font-weight:400;color:var(--text)">${sanitize(op.detail)}</div></div>` : ''}
+    </div>
+  `;
+
+  // ── Checklist ──
+  const f = data.filters || {};
+  const adxVal = data.meta?.adx;
+  const adxStr = adxVal != null ? fmtNum(adxVal, 1) : '—';
+  const checks = [
+    { label: 'Viés do Timeframe Maior', weight: 'viés',
+      desc: `Bias TF (${sanitize(data.biasTf)}) — EMAs 9 > 20 > 50 alinhadas`,
+      pass: data.direction !== 'NEUTRAL' && data.direction != null,
+      value: data.direction === 'BUY' ? 'BUY ✅' : data.direction === 'SELL' ? 'SELL ✅' : 'NEUTRO ❌' },
+    { label: 'EMAs Alinhadas (Entry TF)', weight: '+2pts',
+      desc: `Entry TF (${sanitize(data.entryTf)}) — EMA9 > EMA20 > EMA50`,
+      pass: f.emaAligned, value: f.emaAligned ? 'Alinhadas ✅' : 'Não alinhadas ❌' },
+    { label: 'Breakout 20 Barras', weight: '+2pts',
+      desc: 'Close rompeu máximo/mínimo das últimas 20 velas',
+      pass: f.breakout20, value: f.breakout20 ? 'Confirmado ✅' : 'Não houve ❌' },
+    { label: 'ADX ≥ 25', weight: '+2pts',
+      desc: `Tendência forte — ADX atual: ${adxStr} (+DI: ${fmtNum(data.meta?.pdi,1)} / -DI: ${fmtNum(data.meta?.mdi,1)})`,
+      pass: f.adxOk, value: `ADX ${adxStr} ${f.adxOk ? '✅' : '❌'}` },
+    { label: 'Sessão Ideal', weight: '+1pt',
+      desc: `Sessão ativa: ${sanitize(data.meta?.session || '—')}`,
+      pass: f.sessionOk, value: f.sessionOk ? 'Ideal ✅' : 'Fora do horário ❌' },
+    { label: 'Sem Notícias de Alto Impacto', weight: 'filtro',
+      desc: f.newsBlocked && data.meta?.newsInfo ? `${sanitize(data.meta.newsInfo.name)} — ${sanitize(data.meta.newsInfo.timeStr)}` : 'Janela livre de eventos',
+      pass: !f.newsBlocked, cls: f.newsBlocked ? 'warn' : 'pass',
+      value: f.newsBlocked ? '🚫 Bloqueado' : 'Livre ✅' },
+    { label: 'Contexto Operacional', weight: 'histórico',
+      desc: op?.detail || 'Sem amostra histórica suficiente para classificar o contexto',
+      pass: op?.status === 'OPERAR',
+      cls: op?.status === 'EVITAR' ? 'fail' : op?.status === 'OPERAR' ? 'pass' : 'warn',
+      value: op ? `${op.status} • ${op.summary}` : 'CAUTELA' },
+
+    // ── Filtros Bônus Universais ──────────────────────────────────────────
+    { label: 'Inside Bar', weight: '+1pt', section: 'bônus',
+      desc: 'Candle mãe → inside bar → confirmação direcional',
+      pass: f.insideBar,
+      cls: f.insideBar ? 'pass' : 'neutral',
+      value: f.insideBar ? 'Confirmada ✅' : 'Não detectada' },
+    { label: 'Volume Confirmado', weight: '+1pt', section: 'bônus',
+      desc: f.volumeData === null ? 'Dados de volume indisponíveis (forex)' : `Volume ${f.volumeData ? 'acima' : 'abaixo'} da média 20 períodos`,
+      pass: f.volumeOk,
+      cls: f.volumeData === null ? 'neutral' : f.volumeOk ? 'pass' : 'warn',
+      value: f.volumeData === null ? '— sem dados' : f.volumeOk ? 'Acima da média ✅' : 'Fraco ⚠️' },
+    { label: 'BB Squeeze', weight: '+1pt', section: 'bônus',
+      desc: 'Bandas de Bollinger comprimidas — expansão iminente',
+      pass: f.bbSqueeze,
+      cls: f.bbSqueeze ? 'pass' : 'neutral',
+      value: f.bbSqueeze ? 'Squeeze ativo ✅' : 'Sem compressão' },
+    { label: 'Pullback EMA20', weight: '+1pt', section: 'bônus',
+      desc: 'Retorno à EMA20 com EMAs alinhadas e vela de confirmação',
+      pass: f.pullbackEma,
+      cls: f.pullbackEma ? 'pass' : 'neutral',
+      value: f.pullbackEma ? 'Pullback válido ✅' : 'Sem pullback' },
+    { label: 'Divergência RSI/MACD', weight: '+1pt', section: 'bônus',
+      desc: f.divOpposing ? '⚠️ Divergência CONTRÁRIA ao sinal detectada' : 'Divergência confirma a direção do sinal',
+      pass: f.divConfirm,
+      cls: f.divOpposing ? 'warn' : f.divConfirm ? 'pass' : 'neutral',
+      value: f.divConfirm ? 'Confirma ✅' : f.divOpposing ? 'Opõe ⚠️' : 'Sem divergência' },
+    { label: 'Fibonacci', weight: '+1pt', section: 'bônus',
+      desc: 'Entrada em zona de retração chave (38.2%, 50% ou 61.8%)',
+      pass: f.fibOk,
+      cls: f.fibOk ? 'pass' : 'neutral',
+      value: f.fibOk ? 'Em zona Fib ✅' : 'Fora das zonas' },
+    { label: 'Bias 4H (Macro)', weight: '+1pt', section: 'bônus',
+      desc: `Tendência macro 4H: ${data.meta?.bias4h?.trend || '—'}`,
+      pass: f.bias4hOk,
+      cls: f.bias4hOpposing ? 'warn' : f.bias4hOk ? 'pass' : 'neutral',
+      value: f.bias4hOk ? `4H ${data.meta?.bias4h?.trend} ✅` : f.bias4hOpposing ? `4H contra ⚠️` : `4H ${data.meta?.bias4h?.trend || 'NEUTRAL'}` },
+
+    // ── Filtros Bônus por Ativo ───────────────────────────────────────────
+    ...(f.ichimoku !== undefined ? [{
+      label: 'Ichimoku', weight: '+1pt', section: 'bônus',
+      desc: data.meta?.ichimoku?.insideKumo ? '⚠️ Preço dentro da Kumo — zona de transição' : `Preço ${data.meta?.ichimoku?.aboveKumo ? 'acima' : 'abaixo'} da Kumo + Tenkan/Kijun`,
+      pass: f.ichimoku,
+      cls: data.meta?.ichimoku?.insideKumo ? 'warn' : f.ichimoku ? 'pass' : 'neutral',
+      value: f.ichimoku ? 'Alinhado ✅' : data.meta?.ichimoku?.insideKumo ? 'Dentro Kumo ⚠️' : 'Não alinhado',
+    }] : []),
+    ...(f.vwapOk !== undefined ? [{
+      label: 'VWAP Sessão', weight: '+1pt', section: 'bônus',
+      desc: `VWAP: ${data.meta?.vwap?.value != null ? fmtNum(data.meta.vwap.value, getDecimals(data.asset)) : '—'}`,
+      pass: f.vwapOk,
+      cls: f.vwapOk ? 'pass' : 'neutral',
+      value: f.vwapOk ? 'Alinhado ✅' : 'Não alinhado',
+    }] : []),
+    ...(f.dxyOk !== undefined ? [{
+      label: 'DXY Correlação', weight: '+1pt', section: 'bônus',
+      desc: data.meta?.dxy?.warning || `DXY tendência: ${data.meta?.dxy?.trend || '—'}`,
+      pass: f.dxyOk,
+      cls: data.meta?.dxy?.opposing ? 'warn' : f.dxyOk ? 'pass' : 'neutral',
+      value: f.dxyOk ? `DXY ${data.meta?.dxy?.trend} ✅` : data.meta?.dxy?.opposing ? 'DXY contra ⚠️' : `DXY ${data.meta?.dxy?.trend || '—'}`,
+    }] : []),
+    ...(f.fngOk !== undefined ? [{
+      label: 'Fear & Greed', weight: '+1pt', section: 'bônus',
+      desc: `Índice: ${data.meta?.fearGreed?.value ?? '—'} — ${data.meta?.fearGreed?.classification || '—'}`,
+      pass: f.fngOk,
+      cls: f.fngOpposing ? 'warn' : f.fngOk ? 'pass' : 'neutral',
+      value: f.fngOk ? `${data.meta?.fearGreed?.emoji}${data.meta?.fearGreed?.value} ✅` : f.fngOpposing ? `${data.meta?.fearGreed?.emoji}${data.meta?.fearGreed?.value} ⚠️` : `${data.meta?.fearGreed?.emoji || ''}${data.meta?.fearGreed?.value ?? '—'}`,
+    }] : []),
+  ];
+
+  const isAdminUser = vipUser?.role === 'admin';
+  const checklistTitle = document.getElementById('checklistCardTitle');
+  if (checklistTitle) checklistTitle.textContent = isAdminUser ? '📋 Checklist VIP' : '📊 Análise do Sinal';
+
+  let lastSection = null;
+  if (isAdminUser) {
+    document.getElementById('checklist').innerHTML = checks.map(c => {
+      const cls = c.cls || (c.pass ? 'pass' : 'fail');
+      const icon = cls === 'pass' ? '✅' : cls === 'warn' ? '⚠️' : cls === 'neutral' ? '◽' : '❌';
+      let separator = '';
+      if (c.section && c.section !== lastSection) {
+        lastSection = c.section;
+        separator = `<div style="margin:6px 0 2px;font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--muted);text-transform:uppercase;padding-left:4px">🚀 Filtros Bônus</div>`;
+      }
+      return separator + `<div class="check-row ${cls}">
+        <span class="check-icon">${icon}</span>
+        <div class="check-info">
+          <div class="check-name">${sanitize(c.label)} <span style="color:var(--muted);font-size:10px;font-weight:400">${c.weight}</span></div>
+          <div class="check-desc">${c.desc}</div>
+        </div>
+        <div class="check-value ${cls}">${sanitize(c.value)}</div>
+      </div>`;
+    }).join('');
+  } else {
+    // ── Visão simplificada para assinantes (sem revelar nomes dos filtros) ──
+    const totalChecks = checks.length;
+    const passCount   = checks.filter(c => (c.cls || (c.pass ? 'pass' : 'fail')) === 'pass').length;
+    const warnCount   = checks.filter(c => (c.cls || (c.pass ? 'pass' : 'fail')) === 'warn').length;
+    const score       = data.score || 0;
+    const maxScore    = data.maxScore || 7;
+    const scorePct    = Math.min(100, Math.round((score / maxScore) * 100));
+    const barColor    = score >= 5 ? 'var(--green)' : score >= 3 ? 'var(--gold)' : 'var(--red)';
+    const sessionTxt  = f.sessionOk ? '🟢 Mercado ativo — janela ideal' : '🔴 Fora do horário de operação';
+    const newsTxt     = f.newsBlocked ? '🚫 Evento de alto impacto próximo' : '✅ Janela livre de eventos';
+    const ctxSt       = op?.status;
+    const ctxTxt      = ctxSt === 'OPERAR' ? '✅ Contexto favorável' : ctxSt === 'EVITAR' ? '❌ Contexto desfavorável' : '⚠️ Contexto neutro';
+    const ctxCls      = ctxSt === 'OPERAR' ? 'pass' : ctxSt === 'EVITAR' ? 'fail' : 'warn';
+    document.getElementById('checklist').innerHTML = `
+      <div style="padding:4px 0 14px">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:8px;text-align:center">${passCount} de ${totalChecks} condições satisfeitas</div>
+        <div style="background:rgba(255,255,255,.07);border-radius:10px;height:14px;overflow:hidden;margin-bottom:6px">
+          <div style="height:100%;width:${scorePct}%;background:${barColor};border-radius:10px;transition:width .6s ease"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted)">
+          <span>Score</span><span style="color:${barColor};font-weight:700">${score} / ${maxScore}</span>
+        </div>
+      </div>
+      <div class="check-row ${f.sessionOk ? 'pass' : 'fail'}">
+        <span class="check-icon">${f.sessionOk ? '✅' : '❌'}</span>
+        <div class="check-info"><div class="check-name">${sessionTxt}</div></div>
+      </div>
+      <div class="check-row ${f.newsBlocked ? 'warn' : 'pass'}">
+        <span class="check-icon">${f.newsBlocked ? '⚠️' : '✅'}</span>
+        <div class="check-info"><div class="check-name">${newsTxt}</div></div>
+      </div>
+      ${op ? `<div class="check-row ${ctxCls}">
+        <span class="check-icon">${ctxSt === 'OPERAR' ? '✅' : ctxSt === 'EVITAR' ? '❌' : '⚠️'}</span>
+        <div class="check-info"><div class="check-name">${ctxTxt}</div></div>
+      </div>` : ''}
+      ${warnCount > 0 ? `<div style="margin-top:10px;padding:8px 12px;background:rgba(240,180,41,.10);border:1px solid rgba(240,180,41,.30);border-radius:8px;font-size:12px;color:var(--gold)">⚠️ ${warnCount} condição(ões) requerem atenção</div>` : ''}
+    `;
+  }
+
+  // ── Níveis ──
+  if (data.levels) {
+    const L = data.levels;
+    const dec = getDecimals(data.asset);
+    const entryBasis = data.meta?.entryBasis || L.entryBasis || 'live_price';
+    const entryBasisLabel = entryBasis === 'ask' ? 'Ask operacional'
+      : entryBasis === 'bid' ? 'Bid operacional'
+      : entryBasis === 'live_price' ? 'Preço live'
+      : 'Candle fechado';
+    const feedMode = data.meta?.feedMode || 'ANALYSIS_ONLY';
+    const rawFeedSource = data.meta?.feedSource || 'Fonte não informada';
+    const feedSource = feedMode === 'FTMO_SYNCED' && data.meta?.broker ? `${rawFeedSource} (${data.meta.broker})` : rawFeedSource;
+    document.getElementById('levelsBlock').innerHTML = isAdminUser ? `
+      <div class="levels-grid">
+        <div class="level-item entry"><div class="level-label">Entry</div><div class="level-value">${fmtNum(L.entry, dec)}</div><div class="level-sub">${entryBasisLabel}</div></div>
+        <div class="level-item sl"><div class="level-label">Stop Loss</div><div class="level-value">${fmtNum(L.sl, dec)}</div><div class="level-sub">1.5 × ATR</div></div>
+        <div class="level-item tp"><div class="level-label">Take Profit</div><div class="level-value">${fmtNum(L.tp, dec)}</div><div class="level-sub">3.0 × ATR</div></div>
+      </div>
+      <div class="meta-grid">
+        <div class="meta-item"><div class="meta-label">ATR</div><div class="meta-value">${fmtNum(L.atr, dec)}</div></div>
+        <div class="meta-item"><div class="meta-label">R:R</div><div class="meta-value">1 : ${L.rr}</div></div>
+        <div class="meta-item"><div class="meta-label">ADX</div><div class="meta-value">${adxStr}</div></div>
+        <div class="meta-item"><div class="meta-label">Feed</div><div class="meta-value">${sanitize(feedMode)}</div></div>
+        <div class="meta-item"><div class="meta-label">Live</div><div class="meta-value">${data.meta?.livePrice != null ? fmtNum(data.meta.livePrice, dec) : '—'}</div></div>
+        <div class="meta-item"><div class="meta-label">Candle</div><div class="meta-value">${data.meta?.analysisPrice != null ? fmtNum(data.meta.analysisPrice, dec) : '—'}</div></div>
+        <div class="meta-item"><div class="meta-label">Bid / Ask</div><div class="meta-value">${data.meta?.bid != null ? fmtNum(data.meta.bid, dec) : '—'} / ${data.meta?.ask != null ? fmtNum(data.meta.ask, dec) : '—'}</div></div>
+        <div class="meta-item"><div class="meta-label">Fonte</div><div class="meta-value">${sanitize(feedSource)}</div></div>
+      </div>` : `
+      <div class="levels-grid">
+        <div class="level-item entry"><div class="level-label">Entry</div><div class="level-value">${fmtNum(L.entry, dec)}</div></div>
+        <div class="level-item sl"><div class="level-label">Stop Loss</div><div class="level-value">${fmtNum(L.sl, dec)}</div></div>
+        <div class="level-item tp"><div class="level-label">Take Profit</div><div class="level-value">${fmtNum(L.tp, dec)}</div></div>
+      </div>
+      <div class="meta-grid">
+        <div class="meta-item"><div class="meta-label">R:R</div><div class="meta-value">1 : ${L.rr}</div></div>
+        <div class="meta-item"><div class="meta-label">Live</div><div class="meta-value">${data.meta?.livePrice != null ? fmtNum(data.meta.livePrice, dec) : '—'}</div></div>
+        <div class="meta-item"><div class="meta-label">Bid / Ask</div><div class="meta-value">${data.meta?.bid != null ? fmtNum(data.meta.bid, dec) : '—'} / ${data.meta?.ask != null ? fmtNum(data.meta.ask, dec) : '—'}</div></div>
+      </div>`;
+
+    if (['BUY','SELL'].includes(data.direction) && ['VALID_SIGNAL','PARTIAL_SIGNAL'].includes(status)) {
+      document.getElementById('tradeFormCard').style.display = '';
+      document.getElementById('fDir').value   = data.direction;
+      document.getElementById('fEntry').value = L.entry;
+      document.getElementById('fSL').value    = L.sl;
+      document.getElementById('fTP').value    = L.tp;
+      const btn = document.getElementById('btnOpenTrade');
+      btn.className = `btn-open-trade${data.direction === 'SELL' ? ' sell' : ''}`;
+      btn.textContent = data.direction === 'BUY' ? '📈 Abrir Compra' : '📉 Abrir Venda';
+    } else {
+      document.getElementById('tradeFormCard').style.display = 'none';
+    }
+  } else {
+    document.getElementById('levelsBlock').innerHTML = '<div class="empty-state"><div class="emoji">⏸</div>Sem níveis — aguardando sinal válido</div>';
+    document.getElementById('tradeFormCard').style.display = 'none';
+  }
+
+  // ── Histórico do Setup (apenas admin) ──
+  const sh = data.setupHistory || null;
+  const shCard  = document.getElementById('setupHistoryCard');
+  const shBlock = document.getElementById('setupHistoryBlock');
+  if (!isAdminUser && shCard) { shCard.style.display = 'none'; }
+  else if (sh && shBlock && shCard) {
+    shCard.style.display = '';
+    const scopeLabel = {
+      full:       `${(sh.context.asset||'').toUpperCase()} · ${sh.context.direction} · ${sh.context.regime} · ${sh.context.session||'—'}`,
+      no_session: `${(sh.context.asset||'').toUpperCase()} · ${sh.context.direction} · ${sh.context.regime}`,
+      base:       `${(sh.context.asset||'').toUpperCase()} · ${sh.context.direction} (todos os contextos)`,
+    }[data.setupHistoryScope] || '—';
+
+    const healthColor = sh.health === 'STRONG' ? 'var(--green)' : sh.health === 'WEAK' ? 'var(--red)' : 'var(--gold)';
+    const recentDots  = (sh.recent || []).map(r =>
+      `<span style="font-size:13px;${r==='W'?'color:var(--green)':r==='L'?'color:var(--red)':'color:var(--muted)'}">${r==='W'?'●':r==='L'?'●':'○'}</span>`
+    ).join(' ');
+
+    shBlock.innerHTML = `
+      <div style="font-size:11px;color:var(--muted);margin-bottom:10px">${sanitize(scopeLabel)}</div>
+      <div style="font-size:10px;color:var(--muted);margin-bottom:10px">Baseado em sinais avaliados deste perfil, não no total de trades executados.</div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+        <div style="text-align:center;min-width:60px">
+          <div style="font-size:26px;font-weight:700;color:${healthColor}">${sh.winRate}%</div>
+          <div style="font-size:10px;color:var(--muted)">Win Rate</div>
+        </div>
+        <div style="text-align:center;min-width:50px">
+          <div style="font-size:20px;font-weight:700;color:var(--text)">${sh.total}</div>
+          <div style="font-size:10px;color:var(--muted)">Sinais</div>
+        </div>
+        <div style="text-align:center;min-width:50px">
+          <div style="font-size:20px;font-weight:700;color:var(--green)">${sh.wins}</div>
+          <div style="font-size:10px;color:var(--muted)">Wins</div>
+        </div>
+        <div style="text-align:center;min-width:50px">
+          <div style="font-size:20px;font-weight:700;color:var(--red)">${sh.losses}</div>
+          <div style="font-size:10px;color:var(--muted)">Losses</div>
+        </div>
+        <div style="text-align:center;min-width:70px">
+          <div style="font-size:20px;font-weight:700;color:${(sh.avgPct||0)>=0?'var(--green)':'var(--red)'}">${sh.avgPct>=0?'+':''}${sh.avgPct}%</div>
+          <div style="font-size:10px;color:var(--muted)">Avg %</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:11px;color:var(--muted)">Últimos resultados:</span>
+        <span style="letter-spacing:4px">${recentDots}</span>
+      </div>
+      <div style="margin-top:10px;padding:8px 12px;background:rgba(255,255,255,.04);border-radius:8px;font-size:12px;color:${healthColor};font-weight:700">${sanitize(sh.healthLabel)} — ${sh.total} sinais com este perfil</div>
+    `;
+  } else if (shCard) {
+    shCard.style.display = 'none';
+  }
+
+  // ── Position Sizing ──
+  const scCard = document.getElementById('sizingCard');
+  if (scCard) {
+    if (data.levels) {
+      scCard.style.display = '';
+      calcSizing(); // auto-populate on signal load
+    } else {
+      scCard.style.display = 'none';
+    }
+  }
+}
+
+// ── ABRIR TRADE ──
+async function openTrade() {
+  if (!currentSignal) return;
+  const asset = document.getElementById('selAsset').value;
+  const body = {
+    asset, direction: document.getElementById('fDir').value,
+    entry: parseFloat(document.getElementById('fEntry').value),
+    sl:    parseFloat(document.getElementById('fSL').value),
+    tp:    parseFloat(document.getElementById('fTP').value),
+    atr:   currentSignal.levels?.atr, rr: currentSignal.levels?.rr,
+    score: currentSignal.score, biasTf: currentSignal.biasTf, entryTf: currentSignal.entryTf,
+    session: currentSignal.meta?.session, reason: document.getElementById('fReason').value,
+  };
+  const msg = document.getElementById('formMsg');
+  msg.textContent = ''; msg.className = 'form-msg';
+  try {
+    const r = await vipFetch('/api/vip/trades/open', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    const d = await r.json();
+    if (d.success) {
+      msg.textContent = '✅ Trade aberto!';
+      document.getElementById('fReason').value = '';
+      loadTrades();
+    } else {
+      msg.className = 'form-msg err';
+      msg.textContent = '❌ ' + (d.error || 'Erro');
+    }
+  } catch(e) { msg.className = 'form-msg err'; msg.textContent = '❌ Erro de conexão'; }
+}
+
+// ── TRADES ──
+async function loadTrades() {
+  const [r1, r2, r3] = await Promise.all([
+    vipFetch('/api/vip/trades?status=open&limit=50').then(r => r.json()).catch(() => ({ trades: [] })),
+    vipFetch('/api/vip/trades?status=closed&limit=200').then(r => r.json()).catch(() => ({ trades: [] })),
+    vipFetch('/api/vip/stats').then(r => r.json()).catch(() => ({ stats: null })),
+  ]);
+  window._openTrades   = r1.trades || []; // para modal de edição
+  window._closedTrades = r2.trades || []; // para export CSV e modal de edição
+  renderOpenTrades(r1.trades || []);
+  renderClosedTrades(r2.trades || []);
+  renderStats(r3.stats, r2.trades || []);
+}
+
+function renderOpenTrades(trades) {
+  const el = document.getElementById('openTrades');
+  document.getElementById('openCount').textContent = trades.length > 0 ? `(${trades.length})` : '';
+  if (!trades.length) {
+    el.innerHTML = '<tr><td colspan="10"><div class="empty-state"><div class="emoji">🗂</div>Nenhum trade aberto</div></td></tr>';
+    return;
+  }
+  el.innerHTML = trades.map(t => `<tr>
+    <td>${sanitize((t.asset||'').toUpperCase())}</td>
+    <td class="dir-${(t.direction||'').toLowerCase()}">${sanitize(t.direction)}</td>
+    <td>${fmtNum(t.entry, getDecimals(t.asset))}</td>
+    <td style="color:var(--red)">${fmtNum(t.sl, getDecimals(t.asset))}</td>
+    <td style="color:var(--green)">${fmtNum(t.tp, getDecimals(t.asset))}</td>
+    <td>${fmtNum(t.atr, getDecimals(t.asset))}</td>
+    <td style="color:var(--gold)">${t.score}/${t.maxScore||7}</td>
+    <td>${sanitize(t.session||'—')}</td>
+    <td>${fmtDate(t.openedAt)}</td>
+    <td style="white-space:nowrap">
+      <button class="btn-close" onclick="openCloseModal('${sanitize(t.id)}')">Fechar</button>
+      <button class="btn-del-trade" onclick="confirmDeleteTrade('${sanitize(t.id)}')" style="margin-left:4px">🗑</button>
+    </td>
+  </tr>`).join('');
+}
+
+function isMt5ConfirmedTrade(trade) {
+  return !!(trade && trade.mt5Ticket && trade.mt5VerifiedClose === true);
+}
+
+function buildConfirmedStats(trades) {
+  const confirmed = (trades || []).filter(isMt5ConfirmedTrade);
+  if (!confirmed.length) {
+    return {
+      trades: 0,
+      winRate: 0,
+      avgR: 0,
+      totalR: 0,
+      bestR: 0,
+      worstR: 0,
+      bySession: {},
+      byAsset: {},
+      localOnlyCount: (trades || []).length,
+      confirmed,
+    };
+  }
+
+  const wins = confirmed.filter(t => (t.pnlR || 0) > 0);
+  const totalR = confirmed.reduce((sum, t) => sum + (t.pnlR || 0), 0);
+  const avgR = totalR / confirmed.length;
+  const bestR = Math.max(...confirmed.map(t => t.pnlR || 0));
+  const worstR = Math.min(...confirmed.map(t => t.pnlR || 0));
+  const bySession = {};
+  const byAsset = {};
+
+  confirmed.forEach(t => {
+    const sessionKey = t.session || 'Sem Sessão';
+    const assetKey = (t.asset || 'N/A').toUpperCase();
+    if (!bySession[sessionKey]) bySession[sessionKey] = { trades: 0, totalR: 0 };
+    if (!byAsset[assetKey]) byAsset[assetKey] = { trades: 0, totalR: 0 };
+    bySession[sessionKey].trades++;
+    bySession[sessionKey].totalR += t.pnlR || 0;
+    byAsset[assetKey].trades++;
+    byAsset[assetKey].totalR += t.pnlR || 0;
+  });
+
+  [bySession, byAsset].forEach(group => {
+    Object.values(group).forEach(row => {
+      row.totalR = parseFloat(row.totalR.toFixed(2));
+      row.avgR = row.trades ? parseFloat((row.totalR / row.trades).toFixed(2)) : 0;
+    });
+  });
+
+  return {
+    trades: confirmed.length,
+    winRate: parseFloat(((wins.length / confirmed.length) * 100).toFixed(1)),
+    avgR: parseFloat(avgR.toFixed(2)),
+    totalR: parseFloat(totalR.toFixed(2)),
+    bestR: parseFloat(bestR.toFixed(2)),
+    worstR: parseFloat(worstR.toFixed(2)),
+    bySession,
+    byAsset,
+    localOnlyCount: (trades || []).length - confirmed.length,
+    confirmed,
+  };
+}
+
+function renderClosedTrades(trades) {
+  const el = document.getElementById('closedTrades');
+  if (!trades.length) {
+    el.innerHTML = '<tr><td colspan="12"><div class="empty-state"><div class="emoji">📜</div>Nenhum trade fechado ainda</div></td></tr>';
+    return;
+  }
+  el.innerHTML = trades.map(t => {
+    const pnlCls = (t.pnlR||0) >= 0 ? 'pnl-pos' : 'pnl-neg';
+    const outCls = t.outcome === 'TP' ? 'outcome-tp' : t.outcome === 'SL' ? 'outcome-sl' : 'outcome-manual';
+    const plannedR = Number(t.plannedRr ?? t.rr ?? 0);
+    const realizedR = Number(t.pnlR ?? 0);
+    const extendedTarget = Number.isFinite(plannedR) && plannedR > 0 && realizedR > (plannedR + 0.25);
+    const extendedStop = Number.isFinite(realizedR) && realizedR < -1.1;
+    const rrNote = extendedTarget
+      ? '<span class="rr-note">fechou além do alvo</span>'
+      : extendedStop
+      ? '<span class="rr-note">fechou além do stop</span>'
+      : '';
+    const confirmed = isMt5ConfirmedTrade(t);
+    const auditPill = confirmed
+      ? '<span class="audit-pill confirmed">MT5 Confirmado</span>'
+      : '<span class="audit-pill local">Local / sem prova MT5</span>';
+    const mt5Ticket = t.mt5Ticket != null ? sanitize(String(t.mt5Ticket)) : '—';
+    return `<tr>
+      <td>${sanitize((t.asset||'').toUpperCase())}</td>
+      <td class="dir-${(t.direction||'').toLowerCase()}">${sanitize(t.direction)}</td>
+      <td>${fmtNum(t.entry, getDecimals(t.asset))}</td>
+      <td>${fmtNum(t.closePrice, getDecimals(t.asset))}</td>
+      <td class="${pnlCls}">${(t.pnlR||0) >= 0 ? '+' : ''}${fmtNum(t.pnlR)}R</td>
+      <td class="${outCls}">${sanitize(t.outcome)}</td>
+      <td><span>1:${fmtNum(plannedR)}</span>${rrNote}</td>
+      <td>${auditPill}</td>
+      <td>${mt5Ticket}</td>
+      <td>${sanitize(t.session||'—')}</td>
+      <td>${fmtDate(t.closedAt)}</td>
+      <td style="white-space:nowrap">
+        <button class="btn-edit-trade" onclick="openEditTradeModal('${sanitize(t.id)}')">✏️</button>
+        <button class="btn-del-trade"  onclick="confirmDeleteTrade('${sanitize(t.id)}')">🗑</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// ── EXPORT CSV ──
+function exportTradesCSV() {
+  const rows = [
+    ['ID','Ativo','Direção','Entry','Close','PnL%','PnL_R_Real','Outcome','RR_Planeado','Confirmação','Auditável_MT5','Entra_no_Contador_Principal','Ticket_MT5','Sessão','Score','Origem','Aberto em','Fechado em']
+  ];
+  (window._closedTrades || []).forEach(t => {
+    const confirmed = isMt5ConfirmedTrade(t);
+    rows.push([
+      t.id || '',
+      (t.asset || '').toUpperCase(),
+      t.direction || '',
+      t.entry != null ? t.entry : '',
+      t.closePrice != null ? t.closePrice : '',
+      t.pnlPct != null ? t.pnlPct : '',
+      t.pnlR != null ? t.pnlR : '',
+      t.outcome || '',
+      t.plannedRr != null ? t.plannedRr : (t.rr != null ? t.rr : ''),
+      confirmed ? 'MT5 Confirmado' : 'Local / sem prova MT5',
+      confirmed ? 'SIM' : 'NÃO',
+      confirmed ? 'SIM' : 'NÃO',
+      t.mt5Ticket != null ? t.mt5Ticket : '',
+      t.session || '',
+      t.score != null ? t.score : '',
+      t.source || '',
+      t.openedAt ? new Date(t.openedAt).toISOString() : '',
+      t.closedAt ? new Date(t.closedAt).toISOString() : '',
+    ]);
+  });
+  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url;
+  a.download = `trades_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── MÉTRICAS + EQUITY ──
+function renderStats(stats, closedTrades) {
+  const el = document.getElementById('statsBlock');
+  const confirmedStats = buildConfirmedStats(closedTrades || []);
+  if (!confirmedStats.trades) {
+    el.innerHTML = `<div class="empty-state"><div class="emoji">📊</div>Sem trades fechados confirmados pelo MT5 ainda</div>
+      <div class="stats-note">Trades sem ticket do broker continuam visíveis no histórico, mas não entram no contador principal nem na curva de equity.</div>`;
+    document.getElementById('equityWrap').style.display = 'none';
+    return;
+  }
+
+  const winCls = confirmedStats.winRate >= 50 ? 'var(--green)' : 'var(--red)';
+  const rCls   = confirmedStats.totalR  >= 0  ? 'var(--green)' : 'var(--red)';
+
+  const sessionRows = Object.entries(confirmedStats.bySession || {}).map(([k,v]) =>
+    `<tr><td>${sanitize(k)}</td><td>${v.trades}</td>
+     <td style="color:${v.totalR>=0?'var(--green)':'var(--red)'}">${v.totalR>=0?'+':''}${fmtNum(v.totalR)}R</td>
+     <td>${v.avgR>=0?'+':''}${fmtNum(v.avgR)}R</td></tr>`
+  ).join('') || '<tr><td colspan="4" style="color:var(--muted);padding:8px">—</td></tr>';
+
+  const assetRows = Object.entries(confirmedStats.byAsset || {}).map(([k,v]) =>
+    `<tr><td>${k.toUpperCase()}</td><td>${v.trades}</td>
+     <td style="color:${v.totalR>=0?'var(--green)':'var(--red)'}">${v.totalR>=0?'+':''}${fmtNum(v.totalR)}R</td>
+     <td>${v.avgR>=0?'+':''}${fmtNum(v.avgR)}R</td></tr>`
+  ).join('') || '<tr><td colspan="4" style="color:var(--muted);padding:8px">—</td></tr>';
+
+  el.innerHTML = `
+    <div class="grid-4" style="margin-bottom:16px">
+      <div class="card metric-card"><div class="metric-val" style="color:var(--text)">${confirmedStats.trades}</div><div class="metric-label">Trades Confirmados MT5</div></div>
+      <div class="card metric-card"><div class="metric-val" style="color:${winCls}">${confirmedStats.winRate}%</div><div class="metric-label">Win Rate MT5</div></div>
+      <div class="card metric-card"><div class="metric-val" style="color:${rCls}">${confirmedStats.totalR>=0?'+':''}${confirmedStats.totalR}R</div><div class="metric-label">Total R MT5</div></div>
+      <div class="card metric-card"><div class="metric-val" style="color:var(--gold)">${confirmedStats.localOnlyCount}</div><div class="metric-label">Fora da Prova</div><div class="metric-sub">Melhor: +${confirmedStats.bestR}R | Pior: ${confirmedStats.worstR}R</div></div>
+    </div>
+    <div class="grid-2">
+      <div><div class="card-title">Por Sessão</div><table class="mini-table"><thead><tr><th>Sessão</th><th>Trades</th><th>Total R</th><th>Média R</th></tr></thead><tbody>${sessionRows}</tbody></table></div>
+      <div><div class="card-title">Por Ativo</div><table class="mini-table"><thead><tr><th>Ativo</th><th>Trades</th><th>Total R</th><th>Média R</th></tr></thead><tbody>${assetRows}</tbody></table></div>
+    </div>
+    <div class="stats-note">Contador principal, win rate, total R e curva de equity usam apenas trades com ticket confirmado no MT5. Trades sem confirmação do broker continuam visíveis no histórico e no CSV, marcados como fora da prova.</div>`;
+
+  // ── Equity Chart ──
+  renderEquityChart(confirmedStats.confirmed);
+}
+
+function renderEquityChart(trades) {
+  const wrap = document.getElementById('equityWrap');
+  if (!trades || trades.length === 0) { wrap.style.display = 'none'; return; }
+  wrap.style.display = '';
+
+  // Monta pontos da curva: começa em 0R, acumula pnlR em ordem cronológica
+  const sorted = [...trades].sort((a,b) => (a.closedAt||0) - (b.closedAt||0));
+  const labels = ['Início'];
+  const values = [0];
+  let acc = 0;
+  sorted.forEach((t, i) => {
+    acc += (t.pnlR || 0);
+    labels.push(`#${i+1} ${(t.asset||'').toUpperCase()}`);
+    values.push(parseFloat(acc.toFixed(2)));
+  });
+
+  const canvas = document.getElementById('equityChart');
+  const ctx = canvas.getContext('2d');
+
+  // Destrói instância anterior se existir
+  if (equityChartInstance) { equityChartInstance.destroy(); equityChartInstance = null; }
+
+  // Cor da linha: verde se positivo, vermelho se negativo
+  const finalR = values[values.length - 1];
+  const lineColor = finalR >= 0 ? '#26a69a' : '#ef5350';
+  const fillColor = finalR >= 0 ? 'rgba(38,166,154,0.1)' : 'rgba(239,83,80,0.1)';
+
+  // Mini chart vanilla (sem dependência de biblioteca)
+  drawEquityCanvas(ctx, canvas, labels, values, lineColor, fillColor);
+}
+
+function drawEquityCanvas(ctx, canvas, labels, values, lineColor, fillColor) {
+  const dpr = window.devicePixelRatio || 1;
+  const W = canvas.offsetWidth || canvas.parentElement.offsetWidth || 600;
+  const H = 140;
+  canvas.width  = W * dpr;
+  canvas.height = H * dpr;
+  ctx.scale(dpr, dpr);
+
+  const PAD = { top: 16, right: 16, bottom: 28, left: 44 };
+  const cW = W - PAD.left - PAD.right;
+  const cH = H - PAD.top  - PAD.bottom;
+
+  const minV = Math.min(...values);
+  const maxV = Math.max(...values);
+  const range = maxV - minV || 1;
+
+  const toX = (i) => PAD.left + (i / (values.length - 1)) * cW;
+  const toY = (v) => PAD.top  + (1 - (v - minV) / range) * cH;
+
+  // Background
+  ctx.fillStyle = '#1a1a1a';
+  ctx.fillRect(0, 0, W, H);
+
+  // Zero line
+  const zeroY = toY(0);
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath(); ctx.moveTo(PAD.left, zeroY); ctx.lineTo(W - PAD.right, zeroY); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Y axis labels
+  ctx.fillStyle = '#555';
+  ctx.font = '10px system-ui';
+  ctx.textAlign = 'right';
+  [minV, 0, maxV].forEach(v => {
+    const y = toY(v);
+    if (y >= PAD.top - 5 && y <= H - PAD.bottom + 5) {
+      ctx.fillText((v >= 0 ? '+' : '') + v.toFixed(1) + 'R', PAD.left - 4, y + 3);
+    }
+  });
+
+  // Fill area
+  ctx.beginPath();
+  ctx.moveTo(toX(0), toY(values[0]));
+  values.forEach((v, i) => { if (i > 0) ctx.lineTo(toX(i), toY(v)); });
+  ctx.lineTo(toX(values.length - 1), toY(0));
+  ctx.lineTo(toX(0), toY(0));
+  ctx.closePath();
+  ctx.fillStyle = fillColor;
+  ctx.fill();
+
+  // Line
+  ctx.beginPath();
+  ctx.strokeStyle = lineColor;
+  ctx.lineWidth = 2;
+  ctx.lineJoin = 'round';
+  ctx.moveTo(toX(0), toY(values[0]));
+  values.forEach((v, i) => { if (i > 0) ctx.lineTo(toX(i), toY(v)); });
+  ctx.stroke();
+
+  // Dots
+  values.forEach((v, i) => {
+    ctx.beginPath();
+    ctx.arc(toX(i), toY(v), 3, 0, Math.PI * 2);
+    ctx.fillStyle = lineColor;
+    ctx.fill();
+  });
+
+  // Last value label
+  const lastX = toX(values.length - 1);
+  const lastY = toY(values[values.length - 1]);
+  const lastStr = (values[values.length-1] >= 0 ? '+' : '') + values[values.length-1].toFixed(2) + 'R';
+  ctx.fillStyle = lineColor;
+  ctx.font = 'bold 11px system-ui';
+  ctx.textAlign = 'right';
+  ctx.fillText(lastStr, lastX, lastY - 7);
+}
+
+// ── HISTÓRICO DE SINAIS ──
+async function loadSignalHistory() {
+  const status = document.getElementById('sigFilterStatus').value;
+  const asset  = document.getElementById('sigFilterAsset').value;
+  let url = '/api/vip/signals?limit=200';
+  if (status) url += '&status=' + status;
+  if (asset)  url += '&asset='  + asset;
+  const r = await vipFetch(url).then(r => r.json()).catch(() => ({ signals: [] }));
+  const signals = r.signals || [];
+  const el = document.getElementById('signalHistory');
+  if (!signals.length) {
+    el.innerHTML = '<tr><td colspan="9"><div class="empty-state"><div class="emoji">📡</div>Nenhum sinal encontrado</div></td></tr>';
+    return;
+  }
+  el.innerHTML = signals.map(s => `<tr>
+    <td>${sanitize((s.asset||'').toUpperCase())}</td>
+    <td><span class="sig-status ${sanitize(s.status)}">${sanitize(s.status)}</span></td>
+    <td>${s.direction==='BUY'?'<span class="tag buy">BUY</span>':s.direction==='SELL'?'<span class="tag sell">SELL</span>':'<span style="color:var(--muted)">—</span>'}</td>
+    <td style="color:var(--gold)">${s.score!=null?s.score+'/'+(s.maxScore||7):'—'}</td>
+    <td style="color:var(--muted)">${sanitize(s.entryTf||'—')}</td>
+    <td style="color:var(--muted)">${sanitize(s.biasTf||'—')}</td>
+    <td>${s.meta?.adx!=null?fmtNum(s.meta.adx,1):'—'}</td>
+    <td>${sanitize(s.meta?.session||'—')}</td>
+    <td>${fmtDate(s.generatedAt||s.savedAt)}</td>
+  </tr>`).join('');
+}
+
+// ── MODAL ──
+function openCloseModal(id) {
+  closingTradeId = id;
+  document.getElementById('modalClosePrice').value = '';
+  document.getElementById('modalMsg').textContent = '';
+  document.getElementById('closeModal').classList.add('open');
+}
+function closeModal() {
+  closingTradeId = null;
+  document.getElementById('closeModal').classList.remove('open');
+}
+async function submitClose(outcome) {
+  const closePrice = parseFloat(document.getElementById('modalClosePrice').value);
+  if (!closePrice || isNaN(closePrice)) {
+    document.getElementById('modalMsg').className = 'form-msg err';
+    document.getElementById('modalMsg').textContent = '❌ Informe o preço';
+    return;
+  }
+  try {
+    const r = await vipFetch('/api/vip/trades/close', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ id: closingTradeId, closePrice, outcome }),
+    });
+    const d = await r.json();
+    if (d.success) { closeModal(); loadTrades(); }
+    else { document.getElementById('modalMsg').className='form-msg err'; document.getElementById('modalMsg').textContent='❌ '+(d.error||'Erro'); }
+  } catch(e) { document.getElementById('modalMsg').className='form-msg err'; document.getElementById('modalMsg').textContent='❌ Erro'; }
+}
+document.getElementById('closeModal').addEventListener('click', function(e) { if (e.target===this) closeModal(); });
+
+// ── DELETAR TRADE ────────────────────────────────────────────────────────────
+async function confirmDeleteTrade(id) {
+  if (!confirm('Tem certeza que deseja EXCLUIR este trade permanentemente?\n\nEssa ação não pode ser desfeita.')) return;
+  try {
+    const r = await vipFetch(`/api/vip/trades/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    const d = await r.json();
+    if (d.success) { loadTrades(); }
+    else alert('Erro ao excluir: ' + (d.error || 'Desconhecido'));
+  } catch(e) { alert('Erro de rede ao excluir trade'); }
+}
+
+// ── EDITAR TRADE ─────────────────────────────────────────────────────────────
+function openEditTradeModal(id) {
+  // Busca o trade nos dados em memória
+  const all = [...(window._openTrades||[]), ...(window._closedTrades||[])];
+  const t = all.find(x => x.id === id);
+  document.getElementById('editTradeId').value = id;
+  document.getElementById('editTradeOutcome').value = t?.outcome || '';
+  document.getElementById('editTradeClose').value  = t?.closePrice != null ? t.closePrice : '';
+  document.getElementById('editTradeReason').value  = t?.reason || '';
+  document.getElementById('editTradeMsg').textContent = '';
+  document.getElementById('editTradeModal').style.display = 'flex';
+}
+function closeEditTradeModal() {
+  document.getElementById('editTradeModal').style.display = 'none';
+}
+async function submitEditTrade() {
+  const id       = document.getElementById('editTradeId').value;
+  const outcome  = document.getElementById('editTradeOutcome').value;
+  const closePrice = document.getElementById('editTradeClose').value;
+  const reason   = document.getElementById('editTradeReason').value;
+  const msgEl    = document.getElementById('editTradeMsg');
+  msgEl.textContent = '';
+  const body = {};
+  if (outcome)    body.outcome    = outcome;
+  if (closePrice) body.closePrice = parseFloat(closePrice);
+  if (reason)     body.reason     = reason;
+  if (!Object.keys(body).length) { msgEl.textContent = 'Nenhum campo alterado.'; return; }
+  try {
+    const r = await vipFetch(`/api/vip/trades/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const d = await r.json();
+    if (d.success) { closeEditTradeModal(); loadTrades(); }
+    else { msgEl.textContent = '❌ ' + (d.error || 'Erro ao salvar'); }
+  } catch(e) { msgEl.textContent = '❌ Erro de rede'; }
+}
+
+// ── TABS ──
+// ── JOURNAL ──────────────────────────────────────────────────────────────────
+function renderJournal(trades) {
+  const empty = (el) => { document.getElementById(el).innerHTML = ''; };
+  if (!trades || trades.length === 0) {
+    document.getElementById('journalStreaks').innerHTML =
+      '<div class="empty-state" style="padding:30px"><div class="emoji">📓</div>Sem trades fechados para analisar</div>';
+    ['journalMonthly','journalDistrib','journalNotesTrades'].forEach(empty);
+    return;
+  }
+
+  const sorted = [...trades].sort((a,b) => (a.closedAt||0) - (b.closedAt||0));
+
+  // ── Streaks ──
+  let curWin=0,curLoss=0,maxWin=0,maxLoss=0;
+  let lastIsWin=null;
+  for (const t of sorted) {
+    const w = (t.pnlR||0) > 0;
+    if (w) { curWin++; curLoss=0; if (curWin>maxWin) maxWin=curWin; }
+    else   { curLoss++; curWin=0; if (curLoss>maxLoss) maxLoss=curLoss; }
+    lastIsWin = w;
+  }
+  const streakTxt   = lastIsWin ? `+${curWin} WIN 🟢` : `-${curLoss} LOSS 🔴`;
+  const streakColor = lastIsWin ? 'var(--green)' : 'var(--red)';
+
+  // ── Monthly map ──
+  const mmap = {};
+  for (const t of sorted) {
+    const d = new Date(t.closedAt||t.openedAt||0);
+    const k = `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}`;
+    if (!mmap[k]) mmap[k] = { n:0, w:0, r:0 };
+    mmap[k].n++;
+    if ((t.pnlR||0)>0) mmap[k].w++;
+    mmap[k].r += (t.pnlR||0);
+  }
+  const months = Object.entries(mmap).sort((a,b) => b[0].localeCompare(a[0]));
+  let bestMth='—', bestR=-Infinity;
+  months.forEach(([k,v]) => { if (v.r > bestR) { bestR=v.r; bestMth=k; } });
+
+  // ── Streak cards ──
+  document.getElementById('journalStreaks').innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+      <div class="card metric-card"><div class="metric-val" style="color:${streakColor};font-size:16px">${streakTxt}</div><div class="metric-label">Sequência Atual</div></div>
+      <div class="card metric-card"><div class="metric-val" style="color:var(--green)">+${maxWin}</div><div class="metric-label">Max WIN Streak</div></div>
+      <div class="card metric-card"><div class="metric-val" style="color:var(--red)">-${maxLoss}</div><div class="metric-label">Max LOSS Streak</div></div>
+      <div class="card metric-card"><div class="metric-val" style="color:var(--gold);font-size:16px">${bestMth}</div><div class="metric-label">Melhor Mês${bestMth!=='—'?` (+${bestR.toFixed(1)}R)`:''}</div></div>
+    </div>`;
+
+  // ── Monthly table ──
+  const mRows = months.map(([k,v]) => {
+    const wr  = Math.round((v.w/v.n)*100);
+    const tR  = parseFloat(v.r.toFixed(2));
+    const aR  = parseFloat((v.r/v.n).toFixed(2));
+    const wc  = wr>=50 ? 'var(--green)' : 'var(--red)';
+    const rc  = tR>=0  ? 'var(--green)' : 'var(--red)';
+    const bar = `<div style="display:inline-block;width:${wr}%;max-width:50px;height:3px;background:${wc};margin-left:5px;vertical-align:middle;border-radius:2px"></div>`;
+    return `<tr>
+      <td>${k}</td><td>${v.n}</td><td>${v.w}W/${v.n-v.w}L</td>
+      <td style="color:${wc}">${wr}%${bar}</td>
+      <td style="color:${rc}">${tR>=0?'+':''}${tR}R</td>
+      <td style="color:${rc}">${aR>=0?'+':''}${aR}R</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('journalMonthly').innerHTML = `
+    <div class="card-title" style="margin-bottom:10px">📅 Breakdown Mensal</div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Mês</th><th>N</th><th>W/L</th><th>WR</th><th>Total R</th><th>Avg R</th></tr></thead>
+      <tbody>${mRows||'<tr><td colspan="6" style="color:var(--muted);padding:10px">—</td></tr>'}</tbody>
+    </table></div>`;
+
+  // ── R Distribution ──
+  const bkts = [
+    ['≤-2R',-Infinity,-2,'#ff335599'],['−2R',-2,-1.5,'#ff335577'],
+    ['−1.5R',-1.5,-1,'#ff335555'],['−1R',-1,-0.5,'#ff335533'],
+    ['0R',-0.5,0.5,'#64748b55'],
+    ['+1R',0.5,1.5,'#00ff4133'],['+1.5R',1.5,2,'#00ff4155'],
+    ['+2R',2,2.5,'#00ff4177'],['≥+2.5R',2.5,Infinity,'#00ff4199'],
+  ];
+  const cnts = bkts.map(([lbl,mn,mx,col]) => ({
+    lbl, col,
+    c: trades.filter(t=>(t.pnlR||0)>mn&&(t.pnlR||0)<=mx).length,
+  }));
+  const maxC = Math.max(...cnts.map(b=>b.c),1);
+  const bars = cnts.map(b => {
+    const h = Math.round((b.c/maxC)*80);
+    return `<div style="display:flex;flex-direction:column;align-items:center;flex:1;gap:3px">
+      <div style="font-size:10px;color:var(--muted);min-height:14px">${b.c||''}</div>
+      <div style="height:80px;display:flex;align-items:flex-end;width:100%">
+        <div style="width:100%;height:${h}px;background:${b.col};border-radius:3px 3px 0 0;min-height:${b.c?2:0}px"></div>
+      </div>
+      <div style="font-size:9px;color:var(--muted);text-align:center;line-height:1.2">${b.lbl}</div>
+    </div>`;
+  }).join('');
+  document.getElementById('journalDistrib').innerHTML = `
+    <div class="card-title" style="margin-bottom:10px">📊 Distribuição R</div>
+    <div style="display:flex;gap:3px;padding:6px 0">${bars}</div>`;
+
+  // ── Notes table ──
+  const noteRows = [...sorted].reverse().map(t => {
+    const pnlCls = (t.pnlR||0)>=0 ? 'pnl-pos' : 'pnl-neg';
+    const dt = t.closedAt ? new Date(t.closedAt).toLocaleDateString('pt-BR') : '—';
+    return `<tr>
+      <td>${(t.asset||'').toUpperCase()}</td>
+      <td style="color:${t.direction==='BUY'?'var(--green)':'var(--red)'}">${t.direction==='BUY'?'🟢 BUY':'🔴 SELL'}</td>
+      <td>${fmtNum(t.entry)}</td>
+      <td class="${pnlCls}">${(t.pnlR||0)>=0?'+':''}${fmtNum(t.pnlR)}R</td>
+      <td>${dt}</td>
+      <td style="min-width:200px">
+        <textarea data-tid="${sanitize(t.id)}" rows="1" placeholder="Adicionar nota…"
+          onblur="saveNote(this)" onfocus="this.style.borderColor='var(--gold)'"
+          style="width:100%;background:transparent;border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 6px;font-size:11px;resize:none;outline:none;font-family:inherit;transition:border-color .15s"
+        >${sanitize(t.notes||'')}</textarea>
+      </td>
+    </tr>`;
+  }).join('');
+  document.getElementById('journalNotesTrades').innerHTML = `
+    <div class="card-title" style="margin-bottom:10px">📝 Notas por Trade</div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Ativo</th><th>Dir</th><th>Entry</th><th>PnL (R)</th><th>Fechado em</th><th>Notas</th></tr></thead>
+      <tbody>${noteRows||'<tr><td colspan="6" style="color:var(--muted);padding:10px">Nenhum trade fechado</td></tr>'}</tbody>
+    </table></div>`;
+}
+
+async function saveNote(el) {
+  el.style.borderColor = 'var(--border)';
+  const id = el.dataset.tid;
+  if (!id) return;
+  try {
+    const r = await vipFetch(`/api/vip/trades/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notes: el.value }),
+    });
+    if (r.ok) {
+      const updated = await r.json();
+      // sync back into _closedTrades cache
+      const idx = (window._closedTrades||[]).findIndex(t=>t.id===id);
+      if (idx >= 0 && updated.trade) window._closedTrades[idx].notes = updated.trade.notes;
+      el.style.borderColor = '#00ff4155'; // brief green flash
+      setTimeout(() => { el.style.borderColor = 'var(--border)'; }, 800);
+    }
+  } catch(e) { console.warn('saveNote error:', e); }
+}
+
+function switchTab(tab) {
+  document.getElementById('tabTrades').classList.toggle('active',  tab==='trades');
+  document.getElementById('tabJournal').classList.toggle('active', tab==='journal');
+  document.getElementById('tabSignals').classList.toggle('active', tab==='signals');
+  document.getElementById('tabTradesContent').style.display   = tab==='trades'  ? '' : 'none';
+  document.getElementById('tabJournalContent').style.display  = tab==='journal' ? '' : 'none';
+  document.getElementById('tabSignalsContent').style.display  = tab==='signals' ? '' : 'none';
+  if (tab === 'signals') loadSignalHistory();
+  if (tab === 'journal') renderJournal(window._closedTrades || []);
+}
+
+// ── TRAILING STOP ADMIN PANEL ──
+async function loadTrailingStopStatus() {
+  const card = document.getElementById('trailingStopAdminCard');
+  if (!card) return;
+  if (!vipUser || vipUser.role !== 'admin') { card.style.display = 'none'; return; }
+  card.style.display = '';
+  try {
+    const r = await vipFetch('/api/admin/trailing-stop/status');
+    const d = await r.json();
+    const pill   = document.getElementById('trailingStopPill');
+    const txt    = document.getElementById('trailingStopStatusText');
+    const btnOn  = document.getElementById('btnTrailingOn');
+    const btnOff = document.getElementById('btnTrailingOff');
+    const enabled = d.trailingStopEnabled;
+    if (pill) {
+      pill.textContent = enabled ? '🟢 LIGADO' : '🔴 DESLIGADO';
+      pill.style.background = enabled ? 'rgba(0,255,65,.12)' : 'rgba(239,83,80,.12)';
+      pill.style.color = enabled ? 'var(--green)' : 'var(--red)';
+    }
+    if (txt) txt.textContent = enabled
+      ? 'Servidor move SL por ATR (1.5×) e alerta breakeven no Telegram'
+      : 'SL fixo — use quando o bot MT5 já gerencia trailing';
+    if (btnOn)  btnOn.style.opacity  = enabled ? '0.4' : '1';
+    if (btnOff) btnOff.style.opacity = enabled ? '1'   : '0.4';
+  } catch(e) { /* silencioso */ }
+}
+
+async function setTrailingStop(enabled) {
+  try {
+    const r = await vipFetch('/api/admin/trailing-stop/toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+    const d = await r.json();
+    if (d.success) {
+      await loadTrailingStopStatus();
+      await loadBotVisualStatus();
+    }
+  } catch(e) { console.warn('setTrailingStop error:', e); }
+}
+
+async function toggleSessionBlockOverride() {
+  // Detecta estado atual pelo texto do botão (mais confiável que cor CSS)
+  const btn = document.getElementById('btnSessionOverride');
+  const isActive = btn && btn.textContent.includes('Cancelar');
+  const newEnabled = !isActive;
+
+  if (newEnabled) {
+    const ok = confirm(
+      '⚠️ Ativar Override de Bloqueio de Sessão?\n\n' +
+      'Isso ignora temporariamente os bloqueios de:\n' +
+      '• NY puro (16–21 UTC)\n' +
+      '• Sem sessão (21–00 UTC)\n\n' +
+      'Use apenas para testes. O override é desativado automaticamente ao reiniciar o servidor.'
+    );
+    if (!ok) return;
+  }
+
+  try {
+    const r = await vipFetch('/api/admin/auto-trade/session-override', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: newEnabled }),
+    });
+    const d = await r.json();
+    if (d.success) {
+      // Atualiza status do painel admin
+      await loadAutoTradeStatus();
+      // Força recálculo imediato dos cards do scanner
+      // (o servidor já limpou o _signalCache; aqui o frontend busca resultado fresco)
+      await runScan();
+    } else {
+      alert('Erro: ' + (d.error || 'falha desconhecida'));
+    }
+  } catch(e) {
+    console.warn('toggleSessionBlockOverride error:', e);
+    alert('Erro ao comunicar com o servidor: ' + e.message);
+  }
+}
+
+function applyProfitLockState(data = {}) {
+  const pill   = document.getElementById('profitLockPill');
+  const txt    = document.getElementById('profitLockStatusText');
+  const btnOn  = document.getElementById('btnProfitLockOn');
+  const btnOff = document.getElementById('btnProfitLockOff');
+  const enabled = !!data.profitLockEnabled;
+  const triggerPct = Math.round((data.triggerPct ?? data.profitLockTriggerPct ?? 0.8) * 100);
+  const securePct = Math.round((data.securePct ?? data.profitLockSecurePct ?? 0.2) * 100);
+  if (pill) {
+    pill.textContent = enabled ? '🟢 LIGADO' : '🔴 DESLIGADO';
+    pill.style.background = enabled ? 'rgba(0,255,65,.12)' : 'rgba(239,83,80,.12)';
+    pill.style.color = enabled ? 'var(--green)' : 'var(--red)';
+  }
+  if (txt) txt.textContent = `${triggerPct}% do alvo -> trava ${securePct}% do ganho no SL do MT5`;
+  if (btnOn)  btnOn.style.opacity  = enabled ? '0.4' : '1';
+  if (btnOff) btnOff.style.opacity = enabled ? '1'   : '0.4';
+}
+
+async function loadProfitLockStatus() {
+  const card = document.getElementById('profitLockAdminCard');
+  if (!card) return;
+  if (!vipUser || vipUser.role !== 'admin') { card.style.display = 'none'; return; }
+  card.style.display = '';
+  try {
+    const r = await vipFetch('/api/admin/profit-lock/status');
+    const d = await r.json();
+    const pill   = document.getElementById('profitLockPill');
+    const txt    = document.getElementById('profitLockStatusText');
+    const btnOn  = document.getElementById('btnProfitLockOn');
+    const btnOff = document.getElementById('btnProfitLockOff');
+    const enabled = d.profitLockEnabled;
+    const triggerPct = Math.round((d.triggerPct ?? 0.8) * 100);
+    const securePct = Math.round((d.securePct ?? 0.2) * 100);
+    if (pill) {
+      pill.textContent = enabled ? '🟢 LIGADO' : '🔴 DESLIGADO';
+      pill.style.background = enabled ? 'rgba(0,255,65,.12)' : 'rgba(239,83,80,.12)';
+      pill.style.color = enabled ? 'var(--green)' : 'var(--red)';
+    }
+    if (txt) txt.textContent = `${triggerPct}% do alvo -> trava ${securePct}% do ganho no SL do MT5`;
+    if (btnOn)  btnOn.style.opacity  = enabled ? '0.4' : '1';
+    if (btnOff) btnOff.style.opacity = enabled ? '1'   : '0.4';
+  } catch(e) { console.warn('loadProfitLockStatus error:', e); }
+}
+
+async function setProfitLock(enabled) {
+  try {
+    const r = await vipFetch('/api/admin/profit-lock/toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+    const d = await r.json();
+    if (d.success) {
+      await loadProfitLockStatus();
+      await loadBotVisualStatus();
+    }
+  } catch(e) { console.warn('setProfitLock error:', e); }
+}
+
+function renderBotFlags(flags = {}) {
+  const el = document.getElementById('botVisualFlags');
+  if (!el) return;
+  const items = [
+    { label: 'Auto Trade', enabled: !!flags.autoTradeEnabled },
+    { label: 'Trailing', enabled: !!flags.trailingStopEnabled },
+    { label: 'Profit Lock', enabled: !!flags.profitLockEnabled },
+  ];
+  el.innerHTML = items.map(item => `
+    <span class="token-chip ${item.enabled ? 'ok' : 'missing'}" style="padding:6px 10px;font-size:11px">
+      ${item.enabled ? '🟢' : '🔴'} ${item.label}
+    </span>
+  `).join('');
+}
+
+function botSymbolToAssetKey(symbol) {
+  const s = String(symbol || '').toLowerCase();
+  if (s === 'btcusd') return 'btc';
+  if (s === 'xauusd') return 'xauusd';
+  if (s === 'eurusd') return 'eurusd';
+  if (s === 'usdjpy') return 'usdjpy';
+  return s;
+}
+
+function renderBotPositions(positions = []) {
+  const el = document.getElementById('botVisualPositions');
+  if (!el) return;
+  if (!positions.length) {
+    el.innerHTML = '<tr><td colspan="9"><div class="empty-state"><div class="emoji">🛰</div>Sem posições abertas no bot</div></td></tr>';
+    return;
+  }
+  el.innerHTML = positions.map(p => {
+    const dir = p.type || '—';
+    const dirCls = String(dir).toLowerCase() === 'buy' ? 'dir-buy' : 'dir-sell';
+    const profit = Number(p.profit || 0);
+    const profitCls = profit >= 0 ? 'var(--green)' : 'var(--red)';
+    const assetKey = botSymbolToAssetKey(p.symbol);
+    const dec = getDecimals(assetKey);
+    return `<tr>
+      <td>${sanitize(String(p.ticket || '—'))}</td>
+      <td>${sanitize(String(p.symbol || '—').toUpperCase())}</td>
+      <td class="${dirCls}">${sanitize(dir)}</td>
+      <td>${fmtNum(p.volume, 2)}</td>
+      <td>${fmtNum(p.price_open, dec)}</td>
+      <td>${fmtNum(p.price_current, dec)}</td>
+      <td style="color:var(--red)">${fmtNum(p.sl, dec)}</td>
+      <td style="color:var(--green)">${fmtNum(p.tp, dec)}</td>
+      <td style="color:${profitCls}">${profit >= 0 ? '+' : ''}${fmtNum(profit, 2)}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function loadBotVisualStatus() {
+  const card = document.getElementById('botVisualCard');
+  if (!card) return;
+  if (!vipUser || vipUser.role !== 'admin') { card.style.display = 'none'; return; }
+  card.style.display = '';
+  try {
+    const r = await vipFetch('/api/admin/bot-status');
+    const d = await r.json();
+    const pill = document.getElementById('botVisualPill');
+    const txt = document.getElementById('botVisualStatusText');
+    const metrics = document.getElementById('botVisualMetrics');
+    const ok = d.botStatus === 'OK';
+    if (pill) {
+      pill.textContent = ok ? '🟢 BOT ONLINE' : '🔴 BOT OFFLINE';
+      pill.style.background = ok ? 'rgba(0,255,65,.12)' : 'rgba(239,83,80,.12)';
+      pill.style.color = ok ? 'var(--green)' : 'var(--red)';
+    }
+    if (txt) {
+      const triggerPct = Math.round((d.profitLockTriggerPct ?? 0.8) * 100);
+      const securePct = Math.round((d.profitLockSecurePct ?? 0.2) * 100);
+      txt.textContent = `MT5 ${ok ? 'conectado' : 'desconectado'} | Profit Lock ${triggerPct}/${securePct} | Atualizado ${fmtDate(Date.parse(d.timestamp || Date.now()))}`;
+    }
+    if (metrics) {
+      const account = d.account || {};
+      metrics.innerHTML = `
+        <div class="card metric-card"><div class="metric-val" style="color:var(--text)">${account.equity != null ? '$' + fmtNum(account.equity, 2) : '—'}</div><div class="metric-label">Equity</div></div>
+        <div class="card metric-card"><div class="metric-val" style="color:var(--text)">${account.balance != null ? '$' + fmtNum(account.balance, 2) : '—'}</div><div class="metric-label">Balance</div></div>
+        <div class="card metric-card"><div class="metric-val" style="color:var(--text)">${account.free_margin != null ? '$' + fmtNum(account.free_margin, 2) : '—'}</div><div class="metric-label">Free Margin</div></div>
+        <div class="card metric-card"><div class="metric-val" style="color:${(account.open_positions||0) > 0 ? 'var(--gold)' : 'var(--muted)'}">${account.open_positions ?? 0}</div><div class="metric-label">Posições</div></div>
+      `;
+    }
+    renderBotFlags(d);
+    renderBotPositions(d.positions || []);
+  } catch (e) {
+    console.warn('loadBotVisualStatus error:', e);
+  }
+}
+
+async function resetAllTrades() {
+  if (!confirm('⚠️ Apagar TODAS as operações e sinais? Esta ação não pode ser desfeita.')) return;
+  try {
+    const r = await vipFetch('/api/admin/trades/reset', { method: 'POST' });
+    const d = await r.json();
+    if (d.success) {
+      alert(`✅ Limpeza concluída!\nTrades: ${d.deleted.trades} | Sinais VIP: ${d.deleted.vip_signals} | Live: ${d.deleted.live_signals}`);
+      loadTrades();
+    } else {
+      alert('Erro: ' + (d.error || 'desconhecido'));
+    }
+  } catch(e) { alert('Erro ao resetar: ' + e.message); }
+}
+
+// ── AUTO-TRADE ADMIN PANEL ──
+async function loadAutoTradeStatus() {
+  const card = document.getElementById('autoTradeAdminCard');
+  if (!card) return;
+  // Só mostra para admin
+  if (!vipUser || vipUser.role !== 'admin') { card.style.display = 'none'; return; }
+  card.style.display = '';
+  try {
+    const r = await vipFetch('/api/admin/auto-trade/status');
+    const d = await r.json();
+    const pill    = document.getElementById('autoTradePill');
+    const txt     = document.getElementById('autoTradeStatusText');
+    const btnOn   = document.getElementById('btnAutoTradeOn');
+    const btnOff  = document.getElementById('btnAutoTradeOff');
+    const btnRisk    = document.getElementById('btnRiskFilterToggle');
+    const btnSession = document.getElementById('btnSessionOverride');
+    const btnScannerOvr = document.getElementById('btnScannerOverride');
+    const isAdminCtx = vipUser?.role === 'admin';
+    const enabled = d.autoTradeEnabled;
+    const riskEnabled = d.riskPause?.enabled !== false;
+    const sessionOverride = !!d.sessionBlockOverride;
+    if (pill) {
+      pill.textContent = enabled ? '🟢 AUTO' : '🔴 MANUAL';
+      pill.style.background = enabled ? 'rgba(0,255,65,.12)' : 'rgba(239,83,80,.12)';
+      pill.style.color = enabled ? 'var(--green)' : 'var(--red)';
+    }
+    if (txt) {
+      const riskLabel = d.riskPause?.paused
+        ? ` | Risco: ${d.riskPause.level} (${d.riskPause.reason})`
+        : ` | Risco: ${riskEnabled ? 'ativo' : 'desativado'}`;
+      const sessionLabel = sessionOverride ? ' | ⚠️ Horário: OVERRIDE' : '';
+      txt.textContent = `Score mínimo: ${d.scoreThreshold} | Cooldown: ${d.cooldownHours}h | Webhook: ${d.webhookEnabled ? '✅ ok' : '❌ offline'}${riskLabel}${sessionLabel}`;
+    }
+    if (btnOn)  btnOn.style.opacity  = enabled ? '0.4' : '1';
+    if (btnOff) btnOff.style.opacity = enabled ? '1'   : '0.4';
+    if (btnRisk) {
+      btnRisk.textContent = riskEnabled ? '🛡️ Desativar filtro risco' : '🛡️ Ativar filtro risco';
+      btnRisk.style.borderColor = riskEnabled ? 'var(--gold)' : 'var(--muted)';
+      btnRisk.style.color = riskEnabled ? 'var(--gold)' : 'var(--muted)';
+      btnRisk.style.opacity = '1';
+    }
+    if (btnSession) {
+      btnSession.textContent = sessionOverride ? '🕐 Cancelar override' : '🕐 Horário bloq.';
+      btnSession.style.borderColor = sessionOverride ? '#f59e0b' : '#64748b';
+      btnSession.style.color = sessionOverride ? '#f59e0b' : '#64748b';
+      btnSession.style.background = sessionOverride ? 'rgba(245,158,11,.12)' : 'rgba(100,116,139,.08)';
+      btnSession.style.opacity = '1';
+    }
+    // Botão de override no strip do scanner — só visível para admin
+    if (btnScannerOvr) {
+      if (isAdminCtx) {
+        btnScannerOvr.style.display = '';
+        btnScannerOvr.textContent = sessionOverride ? '⚠️ Override ativo' : '🚫 Bloq. ativo';
+        btnScannerOvr.style.borderColor = sessionOverride ? '#f59e0b' : '#64748b';
+        btnScannerOvr.style.color = sessionOverride ? '#f59e0b' : '#64748b';
+        btnScannerOvr.style.background = sessionOverride ? 'rgba(245,158,11,.15)' : 'rgba(100,116,139,.10)';
+      } else {
+        btnScannerOvr.style.display = 'none';
+      }
+    }
+  } catch(e) { /* silencioso */ }
+}
+
+async function setAutoTrade(enabled) {
+  try {
+    const r = await vipFetch('/api/admin/auto-trade/toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+    const d = await r.json();
+    if (d.success) {
+      await loadAutoTradeStatus();
+      await loadBotVisualStatus();
+    }
+  } catch(e) { console.warn('setAutoTrade error:', e); }
+}
+
+async function toggleAutoTradeRiskFilter() {
+  const btnRisk = document.getElementById('btnRiskFilterToggle');
+  const isDisableAction = btnRisk?.textContent?.includes('Desativar');
+  try {
+    const r = await vipFetch('/api/admin/auto-trade/risk-filter', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: !isDisableAction }),
+    });
+    const d = await r.json();
+    if (d.success) {
+      await loadAutoTradeStatus();
+      await loadBotVisualStatus();
+    }
+  } catch(e) { console.warn('toggleAutoTradeRiskFilter error:', e); }
+}
+
+async function repairPricesFromMt5() {
+  const btn    = document.getElementById('btnRepairPrices');
+  const status = document.getElementById('repairPricesStatus');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Buscando MT5...'; }
+  if (status) status.textContent = '';
+  try {
+    // 14 dias de histórico por padrão
+    const r = await vipFetch('/api/admin/trades/repair-prices-from-mt5?hours=336', {
+      method: 'POST',
+    });
+    const d = await r.json();
+    if (d.success) {
+      const msg = `✅ ${d.repaired} corrigido(s) | ${d.notFound} sem match | ${d.skipped} ignorado(s) (${d.dealsReceived} deals MT5)`;
+      if (status) status.textContent = msg;
+      console.log('[repairPricesFromMt5]', d);
+      // Recarrega tabela de histórico para refletir as mudanças
+      if (typeof loadTradeHistory === 'function') await loadTradeHistory();
+      if (typeof loadStats === 'function') await loadStats();
+    } else {
+      if (status) status.textContent = '❌ ' + (d.error || 'falha desconhecida');
+    }
+  } catch(e) {
+    if (status) status.textContent = '❌ Erro: ' + e.message;
+    console.warn('repairPricesFromMt5 error:', e);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🔄 Reparar preços via MT5'; }
+  }
+}
+
+async function toggleSessionBlockOverride() {
+  // Detecta estado atual por qualquer dos dois botões (admin panel ou scanner strip)
+  const btn        = document.getElementById('btnSessionOverride');
+  const btnStrip   = document.getElementById('btnScannerOverride');
+  const isActive   = btn?.textContent?.includes('Cancelar')
+                  || btnStrip?.textContent?.includes('Override ativo');
+  const newVal = !isActive;
+  if (newVal) {
+    const ok = confirm('⚠️ Ativar Override de Bloqueio?\n\nIgnora HARD_BLOCK_HOUR, HARD_BLOCK_SESSION e HARD_BLOCK_DIRECTION — o scanner mostrará sinais reais em qualquer horário/sessão.\n\nUse apenas para testes. Confirmar?');
+    if (!ok) return;
+  }
+  try {
+    const r = await vipFetch('/api/admin/auto-trade/session-override', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: newVal }),
+    });
+    const d = await r.json();
+    if (d.success) {
+      await loadAutoTradeStatus();
+      await runScan(); // Refresh imediato do scanner para refletir novo estado
+    } else {
+      alert('Erro: ' + (d.error || 'falha desconhecida'));
+    }
+  } catch(e) { console.warn('toggleSessionBlockOverride error:', e); }
+}
+
+// ── INIT ──
+(async function init() {
+  vipState.init();
+  await fetchAuthConfig();
+  updateVipTokenBadge();
+  renderAuthPanel();
+  bindAssetSelector();
+  syncScannerSelection();
+  const hasAccess = await restoreVipSession();
+  if (!hasAccess) return;
+  await Promise.all([loadSignal(), runScan(), loadTrades()]);
+  loadAutoTradeStatus();
+  loadTrailingStopStatus();
+  loadProfitLockStatus();
+  loadBotVisualStatus();
+  if (botPanelTimer) clearInterval(botPanelTimer);
+  botPanelTimer = setInterval(() => { loadBotVisualStatus(); }, 15000);
+  // Poll leve a cada 30s: atualiza trades e gráfico R sem recalcular sinal/scan
+  if (tradesPollTimer) clearInterval(tradesPollTimer);
+  tradesPollTimer = setInterval(() => { loadTrades(); }, 30000);
+  startCountdown();
+})();
+</script>
+</body>
+</html>

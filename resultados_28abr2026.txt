@@ -1,0 +1,28 @@
+=== RESULTADOS AO VIVO — MT5 — 28/04/2026 ===
+
+📸 Print do terminal MT5 salvo para divulgação futura.
+
+TRADES ABERTOS (captura ~ 13:30 UTC):
+─────────────────────────────────────────────────────────────────
+Ativo     Bilhete    Horário            Tipo  Vol   Entry       SL          TP          Preço Atual  Lucro
+USDJPY    435814644  28/04 13:25:45     BUY   0.59  159.639     159.487     159.937     159.650      +3.48
+BTCUSD    435728580  28/04 11:48:31     SELL  0.23  76737.40    77040.00    76305.00    76494.11     +47.85
+EURUSD    435824814  28/04 13:45:45     SELL  0.64  1.16913     1.17000     1.16739     1.16952      -21.34
+XAUUSD    435665191  28/04 10:48:31     SELL  0.03  4626.66     4644.05     4591.95     4605.39      +54.56
+XAUUSD    435773593  28/04 12:36:39     SELL  0.04  4610.26     4626.44     4578.82     4605.39      +16.66
+XAUUSD    435817320  28/04 13:30:45     SELL  0.04  4613.53     4627.72     4585.66     4605.39      +27.84
+─────────────────────────────────────────────────────────────────
+LUCRO TOTAL ABERTO: +129.05 EUR
+
+CONTA:
+  Saldo:          9.476,93 EUR
+  Capital Líquido: 9.605,98 EUR
+  Margem:          6.537,91 EUR
+  Margem Livre:    2.939,02 EUR
+  Nível de Margem: 146,93%
+
+NOTAS PARA DIVULGAÇÃO:
+- Bot operando automaticamente via webhook MT5
+- Múltiplos ativos simultâneos: XAUUSD, BTCUSD, USDJPY, EURUSD
+- XAUUSD: 3 entradas pyramid (modo pyramid ativo)
+- Capital em uso com R:R 1:2 em todos os trades

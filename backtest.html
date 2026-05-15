@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Backtest — Trading Dashboard</title>
+<script src="/signal-config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,sans-serif;background:#0f1117;color:#e2e8f0;min-height:100vh;padding:24px}
+h1{font-size:20px;font-weight:600;margin-bottom:4px;color:#f1f5f9}
+.sub{font-size:13px;color:#64748b;margin-bottom:24px}
+.controls{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:24px;background:#1e2433;padding:16px;border-radius:12px;border:1px solid #2d3748}
+.ctrl-group{display:flex;flex-direction:column;gap:6px}
+.ctrl-group label{font-size:12px;color:#94a3b8;font-weight:500}
+select,input[type=number]{background:#0f1117;border:1px solid #334155;color:#e2e8f0;padding:8px 12px;border-radius:8px;font-size:13px;min-width:130px}
+select:focus,input:focus{outline:2px solid #3b82f6;border-color:transparent}
+button{padding:9px 22px;border-radius:8px;border:none;font-size:13px;font-weight:600;cursor:pointer;transition:opacity .15s}
+.btn-run{background:#3b82f6;color:#fff}
+.btn-run:hover{opacity:.85}
+.btn-run:disabled{opacity:.4;cursor:not-allowed}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:24px}
+.stat-card{background:#1e2433;border:1px solid #2d3748;border-radius:10px;padding:14px 16px}
+.stat-label{font-size:11px;color:#64748b;margin-bottom:4px;font-weight:500}
+.stat-value{font-size:22px;font-weight:700}
+.green{color:#22c55e}.red{color:#ef4444}.amber{color:#f59e0b}.blue{color:#60a5fa}.muted{color:#94a3b8}
+.chart-wrap{background:#1e2433;border:1px solid #2d3748;border-radius:12px;padding:16px;margin-bottom:24px;position:relative;height:280px}
+.table-wrap{background:#1e2433;border:1px solid #2d3748;border-radius:12px;overflow:hidden;margin-bottom:24px}
+.table-title{padding:14px 16px;font-size:13px;font-weight:600;border-bottom:1px solid #2d3748;color:#94a3b8}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{padding:10px 14px;text-align:left;color:#64748b;font-weight:500;background:#161b27;border-bottom:1px solid #2d3748}
+td{padding:9px 14px;border-bottom:1px solid #1a2133}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#232b3a}
+.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600}
+.badge-win{background:#14532d;color:#4ade80}
+.badge-loss{background:#450a0a;color:#f87171}
+.badge-open{background:#1e3a5f;color:#93c5fd}
+.badge-buy{background:#1e3a5f;color:#60a5fa}
+.badge-sell{background:#2d1b69;color:#a78bfa}
+.status{text-align:center;padding:32px;color:#64748b;font-size:14px}
+.error-msg{background:#450a0a;border:1px solid #7f1d1d;color:#f87171;padding:12px 16px;border-radius:8px;margin-bottom:16px;font-size:13px}
+.loading-dots::after{content:' .';animation:dots 1.2s infinite}
+@keyframes dots{0%,20%{content:' .'}40%{content:' ..'}80%,100%{content:' ...'}}
+</style>
+</head>
+<body>
+
+<h1>Backtest — Master Signal</h1>
+<p class="sub">Replay historico com as mesmas funcoes puras usadas em producao. Sem look-ahead.</p>
+
+<div id="errorBox" class="error-msg" style="display:none"></div>
+
+<div class="controls">
+  <div class="ctrl-group">
+    <label>Ativo</label>
+    <select id="selAsset">
+      <option value="btc">BTC/USD</option>
+      <option value="xauusd">XAU/USD</option>
+      <option value="eurusd">EUR/USD</option>
+      <option value="usdjpy">USD/JPY</option>
+    </select>
+  </div>
+  <div class="ctrl-group">
+    <label>Timeframe</label>
+    <select id="selTf">
+      <option value="15m">15 min</option>
+      <option value="1h">1 hora</option>
+      <option value="4h">4 horas</option>
+    </select>
+  </div>
+  <div class="ctrl-group">
+    <label>Score mínimo</label>
+    <input type="number" id="inScore" value="2" min="1" max="5" step="1" style="width:90px"/>
+  </div>
+  <div class="ctrl-group">
+    <label>Max velas/trade</label>
+    <input type="number" id="inBars" value="96" min="4" max="500" step="4" style="width:100px"/>
+  </div>
+  <div class="ctrl-group" style="justify-content:flex-end">
+    <button class="btn-run" id="btnRun" onclick="runBacktest()">Executar backtest</button>
+  </div>
+</div>
+
+<div class="stats-grid" id="statsGrid">
+  <div class="stat-card"><div class="stat-label">Aguardando</div><div class="stat-value muted">—</div></div>
+</div>
+
+<div class="chart-wrap">
+  <canvas id="equityChart" role="img" aria-label="Equity curve do backtest">Equity curve ainda nao gerada.</canvas>
+</div>
+
+<div class="table-wrap">
+  <div class="table-title">Trades</div>
+  <div id="tradesBody"><div class="status">Execute o backtest para ver os trades.</div></div>
+</div>
+
+<script>
+let chartInst = null;
+
+function showError(msg) {
+  const box = document.getElementById('errorBox');
+  box.textContent = msg;
+  box.style.display = msg ? 'block' : 'none';
+}
+
+function fmt(v, dec) {
+  if (v == null) return '—';
+  return Number(v).toFixed(dec ?? 2);
+}
+
+function colorVal(v) {
+  if (v > 0) return 'green';
+  if (v < 0) return 'red';
+  return 'muted';
+}
+
+function renderStats(stats) {
+  const wrf = stats.winRate.toFixed(1);
+  const pf  = stats.profitFactor >= 99 ? '∞' : stats.profitFactor.toFixed(2);
+  const cards = [
+    { label: 'Total trades',    value: stats.total,                cls: 'blue' },
+    { label: 'Win rate',        value: wrf + '%',                  cls: stats.winRate >= 50 ? 'green' : 'red' },
+    { label: 'Profit factor',   value: pf,                         cls: stats.profitFactor >= 1.5 ? 'green' : stats.profitFactor >= 1 ? 'amber' : 'red' },
+    { label: 'Expectancy (R)',  value: stats.expectancy.toFixed(3),cls: colorVal(stats.expectancy) },
+    { label: 'Total R',         value: (stats.totalR >= 0 ? '+' : '') + stats.totalR.toFixed(2) + 'R', cls: colorVal(stats.totalR) },
+    { label: 'Max drawdown',    value: stats.maxDrawdownR.toFixed(2) + 'R', cls: stats.maxDrawdownR > 5 ? 'red' : 'amber' },
+    { label: 'Wins',            value: stats.wins,                 cls: 'green' },
+    { label: 'Losses',          value: stats.losses,               cls: 'red' },
+  ];
+  document.getElementById('statsGrid').innerHTML = cards.map(c =>
+    `<div class="stat-card"><div class="stat-label">${c.label}</div><div class="stat-value ${c.cls}">${c.value}</div></div>`
+  ).join('');
+}
+
+function renderChart(curve) {
+  const ctx = document.getElementById('equityChart').getContext('2d');
+  if (chartInst) chartInst.destroy();
+  const labels = curve.map(p => p.x);
+  const data   = curve.map(p => p.y);
+  const color  = data[data.length - 1] >= 0 ? '#22c55e' : '#ef4444';
+  chartInst = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Equity (R)',
+        data,
+        borderColor: color,
+        backgroundColor: color + '18',
+        fill: true,
+        tension: 0.3,
+        pointRadius: data.length > 60 ? 0 : 3,
+        borderWidth: 2,
+        pointBackgroundColor: color,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ' ' + ctx.parsed.y.toFixed(2) + 'R' } }
+      },
+      scales: {
+        x: { ticks: { color: '#64748b', maxTicksLimit: 10 }, grid: { color: '#1a2133' } },
+        y: { ticks: { color: '#64748b', callback: v => v + 'R' }, grid: { color: '#1a2133' } }
+      }
+    }
+  });
+}
+
+function renderTrades(trades, dec) {
+  if (!trades.length) {
+    document.getElementById('tradesBody').innerHTML = '<div class="status">Nenhum trade gerado com esses parametros.</div>';
+    return;
+  }
+  const rows = trades.slice(0, 300).map((t, i) => {
+    const dirBadge    = `<span class="badge ${t.direction === 'BUY' ? 'badge-buy' : 'badge-sell'}">${t.direction}</span>`;
+    const resultBadge = `<span class="badge ${t.result === 'WIN' ? 'badge-win' : t.result === 'LOSS' ? 'badge-loss' : 'badge-open'}">${t.result}</span>`;
+    const pnlCls      = t.pnlR > 0 ? 'green' : t.pnlR < 0 ? 'red' : 'muted';
+    const pnlStr      = (t.pnlR >= 0 ? '+' : '') + t.pnlR.toFixed(2) + 'R';
+    return `<tr>
+      <td style="color:#64748b">${i+1}</td>
+      <td>${dirBadge}</td>
+      <td>Score ${t.score > 0 ? '+' : ''}${t.score}</td>
+      <td>${fmt(t.entry, dec)}</td>
+      <td style="color:#ef4444">${fmt(t.sl, dec)}</td>
+      <td style="color:#22c55e">${fmt(t.tp, dec)}</td>
+      <td>${resultBadge}</td>
+      <td class="${pnlCls}" style="font-weight:600">${pnlStr}</td>
+      <td style="color:#64748b">RSI ${t.rsi} | ADX ${t.adx}</td>
+    </tr>`;
+  }).join('');
+
+  const tooMany = trades.length > 300 ? `<div class="status">Mostrando 300 de ${trades.length} trades.</div>` : '';
+
+  document.getElementById('tradesBody').innerHTML = `
+    <table>
+      <thead><tr>
+        <th>#</th><th>Dir</th><th>Sinal</th><th>Entry</th><th>SL</th><th>TP</th><th>Resultado</th><th>PnL</th><th>Contexto</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>${tooMany}`;
+}
+
+async function runBacktest() {
+  showError('');
+  const btn    = document.getElementById('btnRun');
+  btn.disabled = true;
+  btn.textContent = 'Calculando' ;
+  btn.classList.add('loading-dots');
+
+  document.getElementById('statsGrid').innerHTML = '<div class="stat-card"><div class="stat-label">Processando</div><div class="stat-value muted loading-dots">backtest</div></div>';
+  document.getElementById('tradesBody').innerHTML = '<div class="status loading-dots">Executando replay de candles</div>';
+
+  try {
+    const asset    = document.getElementById('selAsset').value;
+    const tf       = document.getElementById('selTf').value;
+    const score    = parseInt(document.getElementById('inScore').value) || 2;
+    const bars     = parseInt(document.getElementById('inBars').value)  || 96;
+
+    const resp = await fetch('/api/backtest/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ asset, timeframe: tf, scoreThreshold: score, maxBarsInTrade: bars }),
+    });
+
+    const data = await resp.json();
+
+    if (!resp.ok || !data.success) {
+      showError(data.error || 'Erro ao executar backtest.');
+      document.getElementById('statsGrid').innerHTML = '';
+      document.getElementById('tradesBody').innerHTML = '<div class="status">Falha no backtest.</div>';
+      return;
+    }
+
+    const dec = { btc: 0, xauusd: 2, eurusd: 5, usdjpy: 3 }[asset] ?? 2;
+
+    renderStats(data.stats);
+    if (data.stats.equityCurve?.length) renderChart(data.stats.equityCurve);
+    renderTrades(data.trades, dec);
+
+    const elapsed = data.meta?.elapsedMs ?? 0;
+    btn.textContent = `Pronto (${elapsed}ms)`;
+    setTimeout(() => { btn.textContent = 'Executar backtest'; btn.disabled = false; btn.classList.remove('loading-dots'); }, 2000);
+  } catch (err) {
+    showError('Erro de rede: ' + err.message);
+    btn.textContent = 'Executar backtest';
+    btn.disabled = false;
+    btn.classList.remove('loading-dots');
+  }
+}
+</script>
+</body>
+</html>

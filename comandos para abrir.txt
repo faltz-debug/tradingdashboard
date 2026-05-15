@@ -1,0 +1,72 @@
+╔══════════════════════════════════════════════════════════════╗
+║           DASHBOARD VIP MT5 — COMANDOS PARA ABRIR           ║
+╚══════════════════════════════════════════════════════════════╝
+
+══ FORMA MAIS FÁCIL ════════════════════════════════════════════
+
+  Duplo clique em: start.bat
+
+  Abre automaticamente:
+    → Janela 1: MT5 Feed Sync (Python)
+    → Janela 2: Servidor Node.js
+
+  Depois acesse no navegador:
+    → Dashboard VIP:  http://localhost:3000/vip.html
+    → Dashboard full: http://localhost:3000/dashboard.html
+
+══ FORMA MANUAL (3 terminais) ══════════════════════════════════
+
+  Terminal 1 — Feed MT5 (obrigatório, precisa do MT5 aberto):
+    python mt5_feed_sync.py
+
+  Terminal 2 — Servidor principal:
+    node server.js
+
+  Terminal 3 — Bot de execução automatica no MT5 (opcional):
+    python bot_webhook_receiver.py
+
+══ ORDEM CORRETA DE INICIO ═════════════════════════════════════
+
+  1. Abra o MetaTrader 5 (FTMO-Demo) e faca login
+  2. Inicie o mt5_feed_sync.py -> espere ver logs de candles
+  3. Inicie o node server.js
+  4. Abra http://localhost:3000/vip.html no navegador
+  5. Clique SCAN -> confirme "source: MT5 FTMO" no canto
+
+══ VERIFICAR SE MT5 ESTA SENDO USADO ═══════════════════════════
+
+  Abra: http://localhost:3000/api/mt5/bridge-status
+
+  Deve mostrar:
+    "mode": "FILE_CACHE"   <- MT5 ativo OK
+    "mode": "OFFLINE"      <- MT5 nao esta rodando
+
+══ TELEGRAM ════════════════════════════════════════════════════
+
+  Atualmente: DESATIVADO (LOCAL_SAFE=true no .env)
+
+  Para ativar, edite o .env e mude:
+    LOCAL_SAFE=false
+
+  Mensagens enviadas automaticamente:
+    -> Sinal VIP gerado (score >= 7)
+    -> Trade aberto
+    -> Trade fechado
+
+══ THRESHOLD DE ABERTURA AUTOMATICA ════════════════════════════
+
+  Score minimo para abrir trade: AUTO_OPEN_SCORE_THRESHOLD=7.0
+  (no .env — apenas VALID_SIGNAL abre automaticamente)
+
+══ ARQUIVOS IMPORTANTES ════════════════════════════════════════
+
+  .env                    configuracoes (MT5 login, Telegram, portas)
+  server.js               servidor principal (porta 3000)
+  vip.html                painel VIP (sinais + trades)
+  dashboard.html          dashboard tecnico completo
+  mt5_feed_sync.py        sincroniza candles do MT5 a cada 5s
+  bot_webhook_receiver.py abre ordens no MT5 (porta 5000, opcional)
+  signal-config.js        parametros dos filtros VIP
+  data/trades.db          historico de trades (SQLite)
+  data/mt5_feed.json      candles em tempo real (atualiza a cada 5s)
+  _docs/                  manuais e planos de producao
